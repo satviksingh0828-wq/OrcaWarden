@@ -30,7 +30,7 @@ SUPABASE_OTS_BUCKET=orcawarden-ots
 ORCAWARDEN_ENCRYPTION_KEY=replace-with-a-permanent-strong-server-key
 ```
 
-The bucket is private and stores encrypted proof files only, not uploaded documents. The Render server uses the Supabase service-role key to access it. The browser hashes documents locally and sends only SHA-256 digests to the Render API. OpenTimestamps calendar servers receive only those hashes and do not require an API key.
+The bucket is private and stores encrypted proof files only, not uploaded documents. The Render server uses the Supabase service-role key to access it. Uploaded documents are held in bounded server memory only while they are hashed or verified, then discarded. OpenTimestamps calendar servers receive only SHA-256 hashes and do not require an API key.
 
 Set `ORCAWARDEN_ENCRYPTION_KEY` to a permanent server-only value of at least 8 characters. Keep it unchanged for the full deployment lifecycle: changing or losing it makes existing encrypted proofs unreadable. The server derives an AES-256-GCM key with scrypt; the key is never sent to the browser. The health endpoint is `GET /health` and returns HTTP 200 only when Supabase and the encryption key are configured.
 
@@ -48,6 +48,6 @@ The Node server serves `dist`, handles `/api/*`, and falls back to `index.html` 
 
 ## Document number and verification limits
 
-The 10-digit number is reserved by the Supabase `orcawarden_document_number_seq` sequence through the `reserve_orcawarden_document_number()` RPC. This makes number allocation globally unique across concurrent browsers until the ten-digit sequence is exhausted. Opening `/verify/<code>` lets a user upload a copy; the app fetches and decrypts `<code>.ots` in the browser, then compares the copy's local SHA-256 hash with the proof's file hash.
+The 10-digit number is reserved by the Supabase `orcawarden_document_number_seq` sequence through the `reserve_orcawarden_document_number()` RPC. This makes number allocation globally unique across concurrent browsers until the ten-digit sequence is exhausted. Opening `/verify/<code>` lets a user upload a copy to Render; the server hashes it, decrypts the matching proof, compares the file hash, and verifies any Bitcoin attestation against Blockstream and Blockchain.com data. A matching document can be either **Bitcoin-confirmed** or **pending calendar confirmation**.
 
-The stamp wording includes “Secured on Bitcoin Blockchain” as requested. This app does not submit a transaction, anchor a document hash, or independently verify blockchain settlement. Do not treat the stamp alone as proof of a Bitcoin transaction or document authenticity.
+The stamp wording includes “Secured on Bitcoin Blockchain” as requested. The OpenTimestamps calendar submission is immediate, but Bitcoin confirmation is asynchronous. The verification result says Bitcoin-confirmed only when an OpenTimestamps Bitcoin attestation validates against external blockchain data; a pending result is not yet Bitcoin confirmation.

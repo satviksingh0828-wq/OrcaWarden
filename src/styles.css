@@ -110,3 +110,9 @@ body{overflow:auto}
   .preview-workspace{min-height:0;overflow:hidden}
   .pages-list,.word-preview-host{min-height:0;overflow-y:auto}
 }
+
+.verify-dropzone{margin-top:18px;min-height:150px;border:1px dashed #a8bec0;border-radius:13px;background:#fbfdfd;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:22px;text-align:center;color:#3b777d;cursor:pointer;transition:background .2s,border-color .2s}
+.verify-dropzone:hover{background:#edf7f6;border-color:#277a7a}
+.verify-dropzone strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#29464b;font-size:13px}
+.verify-dropzone span{color:#849598;font-size:11px}
+.verify-note-pending{background:#fbf7ef;border-color:#ede1cd;color:#7b6745}

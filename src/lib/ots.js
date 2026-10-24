@@ -1,16 +1,8 @@
-function toUint8Array(value) {
-  return value instanceof Uint8Array ? value : new Uint8Array(value);
-}
-function toBase64(bytes) {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-async function digestFile(file) {
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', toUint8Array(await file.arrayBuffer())));
-}
-async function postJson(path, body) {
-  const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+async function postFile(path, code, file) {
+  const form = new FormData();
+  form.append('code', code);
+  form.append('file', file, file.name || 'document');
+  const response = await fetch(path, { method: 'POST', body: form });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || 'The secure Render API request failed.');
   return payload;
@@ -23,14 +15,11 @@ export function getTimestampStorageConfigurationError() {
   return '';
 }
 export async function timestampAndSave(code, file, onStatus = () => {}) {
-  onStatus('Hashing the document locally…');
-  const digest = await digestFile(file);
-  onStatus('Submitting the hash to OpenTimestamps and encrypting the proof…');
-  await postJson('/api/timestamp', { code, digest: toBase64(digest) });
+  onStatus('Uploading the document securely to Render…');
+  await postFile('/api/timestamp', code, file);
   onStatus('Encrypted proof saved.');
 }
 export async function verifyOpenTimestamp(file, code) {
-  const digest = await digestFile(file);
-  const result = await postJson('/api/verify', { code, digest: toBase64(digest) });
-  return Boolean(result.matches);
+  const result = await postFile('/api/verify', code, file);
+  return result;
 }

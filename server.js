@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
-import { read, submit, write } from '@lacrypta/typescript-opentimestamps';
+import multer from 'multer';
+import { read, submit, verify, verifiers, write } from '@lacrypta/typescript-opentimestamps';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 10000);
@@ -52,14 +53,10 @@ async function decryptProof(bytes) {
   }
 }
 function validCode(code) { return /^\d{10}$/.test(String(code || '')); }
-function digestFromBody(value) {
-  const digest = Buffer.from(String(value || ''), 'base64');
-  if (digest.length !== 32) throw new Error('A SHA-256 digest is required.');
-  return digest;
-}
 function jsonError(res, error) { return res.status(400).json({ error: error?.message || 'Request failed.' }); }
 
 const app = express();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024, files: 1 } });
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
 app.get('/health', (_req, res) => {
@@ -74,11 +71,12 @@ app.post('/api/reserve-number', async (_req, res) => {
     res.json({ code: data });
   } catch (error) { jsonError(res, error); }
 });
-app.post('/api/timestamp', async (req, res) => {
+app.post('/api/timestamp', upload.single('file'), async (req, res) => {
   try {
     const code = String(req.body?.code || '');
     if (!validCode(code)) throw new Error('A valid ten-digit document number is required.');
-    const digest = digestFromBody(req.body?.digest);
+    if (!req.file?.buffer?.length) throw new Error('A document file is required.');
+    const digest = crypto.createHash('sha256').update(req.file.buffer).digest();
     const { timestamp, errors } = await submit('sha256', new Uint8Array(digest));
     if (!timestamp) throw new Error(errors?.[0]?.message || 'OpenTimestamps did not return a proof.');
     const encrypted = await encryptProof(write(timestamp));
@@ -87,17 +85,24 @@ app.post('/api/timestamp', async (req, res) => {
     res.json({ saved: true, code });
   } catch (error) { jsonError(res, error); }
 });
-app.post('/api/verify', async (req, res) => {
+app.post('/api/verify', upload.single('file'), async (req, res) => {
   try {
     const code = String(req.body?.code || '');
     if (!validCode(code)) throw new Error('A valid ten-digit document number is required.');
-    const digest = digestFromBody(req.body?.digest);
+    if (!req.file?.buffer?.length) throw new Error('A document file is required.');
+    const digest = crypto.createHash('sha256').update(req.file.buffer).digest();
     const { data, error } = await getSupabase().storage.from(BUCKET).download(`${code}.ots`);
     if (error) throw new Error('No encrypted proof was found for this document number.');
     const proof = await decryptProof(await data.arrayBuffer());
-    const expected = read(new Uint8Array(proof)).fileHash.value;
-    const matches = crypto.timingSafeEqual(Buffer.from(expected), digest);
-    res.json({ matches });
+    const timestamp = read(new Uint8Array(proof));
+    const expected = timestamp.fileHash.value;
+    const expectedBuffer = Buffer.from(expected);
+    const matches = expectedBuffer.length === digest.length && crypto.timingSafeEqual(expectedBuffer, digest);
+    if (!matches) return res.json({ matches: false, blockchainVerified: false, status: 'document-mismatch' });
+    const blockchain = await verify(timestamp, verifiers);
+    const attestations = blockchain.attestations || {};
+    const blockchainVerified = Object.keys(attestations).length > 0;
+    res.json({ matches: true, blockchainVerified, status: blockchainVerified ? 'bitcoin-confirmed' : 'pending-calendar', attestations });
   } catch (error) { jsonError(res, error); }
 });
 app.use(express.static(path.join(__dirname, 'dist')));

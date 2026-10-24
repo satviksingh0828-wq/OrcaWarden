@@ -36,13 +36,15 @@ function VerifyPage({ code }) {
   async function verifyFile() {
     if (!candidate || state === 'checking') return;
     setState('checking');
-    setMessage('Fetching the matching .ots proof and checking the document hash…');
+    setMessage('Uploading the document securely and checking the stored proof on Render…');
     try {
-      const matches = await verifyOpenTimestamp(candidate, code);
-      setState(matches ? 'valid' : 'invalid');
-      setMessage(matches
-        ? 'The uploaded document matches the OpenTimestamps proof saved for this document number.'
-        : 'The uploaded document does not match the OpenTimestamps proof saved for this document number.');
+      const result = await verifyOpenTimestamp(candidate, code);
+      setState(result.matches ? (result.blockchainVerified ? 'confirmed' : 'pending') : 'invalid');
+      setMessage(!result.matches
+        ? 'The uploaded document does not match the OpenTimestamps proof saved for this document number.'
+        : result.blockchainVerified
+          ? 'The uploaded document matches the OpenTimestamps proof and the proof is confirmed in the Bitcoin blockchain.'
+          : 'The uploaded document matches the OpenTimestamps proof, but the proof is still waiting for Bitcoin blockchain confirmation.');
     } catch (reason) {
       setState('error');
       setMessage(reason?.message || 'The proof could not be checked.');
@@ -56,11 +58,11 @@ function VerifyPage({ code }) {
         <h1>{valid ? 'Code link opened' : 'Invalid document code'}</h1>
         {valid ? <>
           <div className="verify-number">{code}</div>
-          <p className="verify-copy">Upload the document copy you received. OrcaWarden will download the <strong>{code}.ots</strong> proof, hash your copy in this browser, and compare the hashes.</p>
-          <label className="verify-upload button button-secondary">{candidate ? candidate.name : 'Choose document copy'}<input className="sr-only" type="file" onChange={(event) => { setCandidate(event.target.files?.[0] || null); setState('idle'); setMessage(''); }} /></label>
-          <button className="button button-primary verify-button" disabled={!candidate || state === 'checking' || !isTimestampStorageConfigured()} onClick={verifyFile}>{state === 'checking' ? <><span className="spinner" /> Checking…</> : 'Verify document'}</button>
+          <p className="verify-copy">Upload the document you want to verify. Render hashes the uploaded file, decrypts the matching proof, and checks the proof against Bitcoin.</p>
+          <label className="verify-dropzone"> <Upload size={24} /><strong>{candidate ? candidate.name : 'Choose a document file'}</strong><span>{candidate ? 'Click to replace the selected file' : 'PDF or Word (.docx), up to 40 MB'}</span><input className="sr-only" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { setCandidate(event.target.files?.[0] || null); setState('idle'); setMessage(''); }} /></label>
+          <button className="button button-primary verify-button" disabled={!candidate || state === 'checking' || !isTimestampStorageConfigured()} onClick={verifyFile}>{state === 'checking' ? <><span className="spinner" /> Checking on Render…</> : 'Verify document'}</button>
           {!isTimestampStorageConfigured() && <p className="verify-copy verify-config-note">{getTimestampStorageConfigurationError()}</p>}
-          {message && <div className={`verify-note ${state === 'valid' ? 'verify-note-success' : state === 'invalid' || state === 'error' ? 'verify-note-error' : ''}`}>{message}</div>}
+          {message && <div className={`verify-note ${state === 'confirmed' ? 'verify-note-success' : state === 'pending' ? 'verify-note-pending' : state === 'invalid' || state === 'error' ? 'verify-note-error' : ''}`}>{message}</div>}
         </> : <p className="verify-copy">The link must contain one 10-digit document number.</p>}
       </div>
     </main>
