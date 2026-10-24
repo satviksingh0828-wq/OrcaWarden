@@ -28,22 +28,21 @@ export async function previewPdf(file, onProgress = () => {}) {
   return pages;
 }
 
-export async function exportStampedPdf(file, stampDataUrl, position) {
+export async function exportStampedPdf(file, stampDataUrl) {
   const document = await PDFDocument.load(await file.arrayBuffer());
   const stampImage = await document.embedPng(stampDataUrl);
-  for (const page of document.getPages()) {
-    const { width, height } = page.getSize();
-    const stampWidth = width * 0.36;
-    const stampHeight = stampWidth * (stampImage.height / stampImage.width);
-    const topX = Math.min(Math.max(position.x, 0), 1 - 0.36);
-    const topY = Math.min(Math.max(position.y, 0), 1 - (stampHeight / height));
-    page.drawImage(stampImage, {
-      x: topX * width,
-      y: height - (topY * height) - stampHeight,
-      width: stampWidth,
-      height: stampHeight,
-      opacity: 1,
-    });
-  }
+  const sourcePage = document.getPages()[0];
+  if (!sourcePage) throw new Error('This PDF does not contain any pages.');
+  const { width, height } = sourcePage.getSize();
+  const cover = document.insertPage(0, [width, height]);
+  const stampWidth = width * 0.36;
+  const stampHeight = stampWidth * (stampImage.height / stampImage.width);
+  cover.drawImage(stampImage, {
+    x: (width - stampWidth) / 2,
+    y: height * 0.05,
+    width: stampWidth,
+    height: stampHeight,
+    opacity: 1,
+  });
   return document.save();
 }

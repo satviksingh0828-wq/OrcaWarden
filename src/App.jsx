@@ -1,14 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Route, Switch } from 'wouter';
-import { ArrowDownToLine, BadgeCheck, Bitcoin, Check, CircleAlert, FileText, LockKeyhole, MousePointer2, RotateCcw, Upload, X } from 'lucide-react';
+import { ArrowDownToLine, BadgeCheck, Bitcoin, CircleAlert, FileText, LockKeyhole, Upload, X } from 'lucide-react';
 import { createDocumentCode, createStamp } from './lib/stamp.js';
 import { exportStampedPdf, previewPdf } from './lib/pdf.js';
-import { exportStampedDocx, paintDocxStampOverlays, previewDocx } from './lib/docx.js';
+import { exportStampedDocx, previewDocx } from './lib/docx.js';
 
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
-const STAMP_WIDTH = 0.36;
-const DEFAULT_POSITION = { x: 0.58, y: 0.81 };
-
 function fileKind(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith('.pdf') || file.type === 'application/pdf') return 'pdf';
@@ -44,16 +41,13 @@ function VerifyPage({ code }) {
   </div>;
 }
 
-function PageCard({ page, index, position, stamp, onChoose }) {
+function PageCard({ page, index, stamp }) {
   const isPdf = Boolean(page.dataUrl);
   return <div className="page-card">
-    <div className="page-meta"><span>PAGE {String(index + 1).padStart(2, '0')}</span><span>{isPdf ? 'PDF PREVIEW' : 'WORD PREVIEW'}</span></div>
-    <div className="page-canvas" onClick={onChoose} role="button" tabIndex={0} aria-label={`Choose stamp position on page ${index + 1}`} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onChoose(event); }}>
-      {isPdf ? <img className="pdf-page-image" src={page.dataUrl} alt={`Preview of page ${index + 1}`} /> : page.element}
-      {position && stamp && <img className="stamp-overlay" style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%`, width: `${STAMP_WIDTH * 100}%` }} src={stamp.dataUrl} alt="Stamp placement preview" draggable="false" />}
-      {position && <span className="placement-dot" style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }} />}
+    <div className="page-meta"><span>PAGE {String(index + 1).padStart(2, '0')}{page.cover ? ' · COVER' : ''}</span><span>{page.cover ? 'ORCAWARDEN STAMP PAGE' : isPdf ? 'PDF PREVIEW' : 'WORD PREVIEW'}</span></div>
+    <div className="page-canvas">
+      {page.cover ? <div className="cover-page" style={{ aspectRatio: `${page.width || 816} / ${page.height || 1056}` }}>{stamp && <img className="cover-stamp" src={stamp.dataUrl} alt="OrcaWarden document stamp" draggable="false" />}</div> : isPdf ? <img className="pdf-page-image" src={page.dataUrl} alt={`Preview of page ${index + 1}`} /> : page.element}
     </div>
-    <div className="page-hint"><MousePointer2 size={13} /> Click a page to move the stamp</div>
   </div>;
 }
 
@@ -63,7 +57,6 @@ function HomePage() {
   const [file, setFile] = useState(null);
   const [kind, setKind] = useState(null);
   const [pages, setPages] = useState([]);
-  const [position, setPosition] = useState(DEFAULT_POSITION);
   const [stamp, setStamp] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -71,7 +64,6 @@ function HomePage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [dragging, setDragging] = useState(false);
-  const [wordPageSize, setWordPageSize] = useState({ width: 816, height: 1056 });
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +72,6 @@ function HomePage() {
       setLoading(true);
       setPages([]);
       setStamp(null);
-      setPosition(DEFAULT_POSITION);
       setError('');
       setNotice('');
       try {
@@ -91,7 +82,7 @@ function HomePage() {
         if (kind === 'pdf') {
           const previews = await previewPdf(file, (current, total) => setProgress({ current, total }));
           if (!cancelled) {
-            setPages(previews.map((page) => ({ ...page, id: `pdf-${page.number}` })));
+            setPages([{ id: 'cover', cover: true, width: previews[0]?.width, height: previews[0]?.height }, ...previews.map((page) => ({ ...page, id: `pdf-${page.number}` }))]);
             setProgress({ current: previews.length, total: previews.length });
           }
         } else {
@@ -102,8 +93,6 @@ function HomePage() {
           const pageNodes = [...container.querySelectorAll('.docx-wrapper section.docx, section.docx')];
           if (!pageNodes.length) throw new Error('No pages were found in this Word file. Try saving it as a .docx document and upload it again.');
           pageNodes.forEach((element, index) => { element.dataset.owPage = String(index); });
-          const rect = pageNodes[0].getBoundingClientRect();
-          setWordPageSize({ width: rect.width || 816, height: rect.height || 1056 });
           setPages(pageNodes.map((element, index) => ({ id: `docx-${index}`, element, number: index + 1 })));
         }
       } catch (reason) {
@@ -119,19 +108,6 @@ function HomePage() {
     load();
     return () => { cancelled = true; };
   }, [file, kind]);
-
-  useEffect(() => {
-    if (kind !== 'docx' || !wordPreviewRef.current || !pages.length) return;
-    paintDocxStampOverlays(wordPreviewRef.current, stamp?.dataUrl, position);
-  }, [kind, pages, position, stamp]);
-
-  function setPositionFromClick(event) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const stampHeight = STAMP_WIDTH * (stamp?.height || 102) / (stamp?.width || 440);
-    const x = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1 - STAMP_WIDTH);
-    const y = Math.min(Math.max((event.clientY - rect.top) / rect.height, 0), 1 - stampHeight);
-    setPosition({ x, y });
-  }
 
   async function acceptFile(candidate) {
     if (!candidate) return;
@@ -153,18 +129,18 @@ function HomePage() {
   }
 
   async function createDownload() {
-    if (!file || !stamp || !position || busy) return;
+    if (!file || !stamp || busy) return;
     setBusy(true);
     setError('');
     setNotice('Preparing your stamped file…');
     try {
       if (kind === 'pdf') {
-        const bytes = await exportStampedPdf(file, stamp.dataUrl, position);
+        const bytes = await exportStampedPdf(file, stamp.dataUrl);
         const output = new Blob([bytes], { type: 'application/pdf' });
         const name = file.name.replace(/\.pdf$/i, '') + '-orcawarden.pdf';
         downloadBlob(output, name);
       } else {
-        const output = await exportStampedDocx(file, stamp, position, wordPageSize);
+        const output = await exportStampedDocx(file, stamp);
         const name = file.name.replace(/\.docx$/i, '') + '-orcawarden.docx';
         downloadBlob(output, name);
       }
@@ -184,7 +160,6 @@ function HomePage() {
     setStamp(null);
     setError('');
     setNotice('');
-    setPosition(DEFAULT_POSITION);
     if (inputRef.current) inputRef.current.value = '';
     if (wordPreviewRef.current) wordPreviewRef.current.innerHTML = '';
   }
@@ -201,7 +176,7 @@ function HomePage() {
       </section> : <section className="editor-layout">
         <aside className="control-rail">
           <div className="file-chip"><div className="file-icon"><FileText size={18} /></div><div className="file-name-wrap"><strong title={file.name}>{file.name}</strong><span>{kind === 'pdf' ? 'PDF DOCUMENT' : 'WORD DOCUMENT'} · {(file.size / (1024 * 1024)).toFixed(1)} MB</span></div><button className="icon-button" aria-label="Remove file" onClick={clearFile}><X size={16} /></button></div>
-          <div className="rail-section"><p className="section-kicker">STAMP PLACEMENT</p><h2>Click the page</h2><p className="control-copy">Choose where the mark should appear. The same relative position will be used on every page.</p><div className="position-readout"><span className="position-glyph"><MousePointer2 size={17} /></span><span>{position ? 'Position selected' : 'Choose a position'}</span><span className="position-state"><Check size={13} /></span></div><button className="text-button" onClick={() => setPosition(DEFAULT_POSITION)}><RotateCcw size={13} /> Reset position</button></div>
+          <div className="rail-section"><p className="section-kicker">STAMP PLACEMENT</p><h2>Cover page</h2><p className="control-copy">The stamp will sit at the bottom center, with a 5% margin.</p></div>
           <div className="rail-section stamp-data-section"><p className="section-kicker">DOCUMENT CODE</p>{stamp ? <><div className="number-display">{stamp.code}</div><p className="control-copy">All three codes link to this app with this number.</p><div className="code-types"><span>QR</span><span>DM</span><span>BARCODE</span></div></> : <p className="control-copy">Generating the stamp preview…</p>}</div>
           <div className="rail-bottom">
             {error && <div className="alert alert-error"><CircleAlert size={16} /><span>{error}</span></div>}
@@ -212,46 +187,17 @@ function HomePage() {
         </aside>
 
         <section className="preview-workspace">
-          <div className="preview-toolbar"><div><p className="section-kicker">DOCUMENT PREVIEW</p><h2>{loading ? 'Opening your file…' : pages.length ? `${pages.length} ${pages.length === 1 ? 'page' : 'pages'}` : 'Preparing preview'}</h2></div><div className="preview-legend"><span className="legend-dot" /> Stamp position</div></div>
+          <div className="preview-toolbar"><div><p className="section-kicker">DOCUMENT PREVIEW</p><h2>{loading ? 'Opening your file…' : pages.length ? `${pages.length + (kind === 'docx' ? 1 : 0)} ${pages.length + (kind === 'docx' ? 1 : 0) === 1 ? 'page' : 'pages'}` : 'Preparing preview'}</h2></div><div className="preview-legend"><span className="legend-dot" /> Cover-page stamp</div></div>
           {loading && <div className="loading-card"><span className="spinner dark-spinner" /><div><strong>Preparing a local preview</strong><span>{kind === 'pdf' && progress.total ? `Rendering page ${progress.current} of ${progress.total}` : 'Reading document pages'}</span></div></div>}
-          {kind === 'pdf' && pages.length > 0 && <div className="pages-list">{pages.map((page, index) => <PageCard key={page.id} page={page} index={index} position={position} stamp={stamp} onChoose={setPositionFromClick} />)}</div>}
-          {kind === 'docx' && <div className="word-preview-host" ref={wordPreviewRef} />}
+          {kind === 'pdf' && pages.length > 0 && <div className="pages-list">{pages.map((page, index) => <PageCard key={page.id} page={page} index={index} stamp={stamp} />)}</div>}
+          {kind === 'docx' && <div className="pages-list docx-pages-list"><PageCard page={{ cover: true, width: 816, height: 1056 }} index={0} stamp={stamp} /><div className="word-preview-host" ref={wordPreviewRef} /></div>}
           <div className="preview-disclaimer"><Bitcoin size={14} /><span>The stamp text says “Secured on Bitcoin Blockchain.” This app does not submit or verify a Bitcoin transaction.</span></div>
         </section>
       </section>}
 
       {error && !file && <div className="alert alert-error upload-error"><CircleAlert size={16} /><span>{error}</span></div>}
     </main>
-    {kind === 'docx' && <DocxClickCapture
-      hostRef={wordPreviewRef}
-      pages={pages}
-      stamp={stamp}
-      position={position}
-      onChoose={(nextPosition, pageSize) => { setPosition(nextPosition); setWordPageSize(pageSize); }}
-    />}
   </div>;
-}
-
-// The Word preview is rendered by docx-preview outside React's normal tree. This bridge
-// adds placement feedback to each rendered page and captures user clicks consistently.
-function DocxClickCapture({ hostRef, pages, stamp, position, onChoose }) {
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host || !pages.length) return undefined;
-    const handler = (event) => {
-      const page = event.target.closest('.docx-wrapper section.docx, section.docx');
-      if (!page || !host.contains(page)) return;
-      const rect = page.getBoundingClientRect();
-      const stampHeight = STAMP_WIDTH * (stamp?.height || 102) / (stamp?.width || 440);
-      onChoose({
-        x: Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1 - STAMP_WIDTH),
-        y: Math.min(Math.max((event.clientY - rect.top) / rect.height, 0), 1 - stampHeight),
-      }, { width: rect.width || 816, height: rect.height || 1056 });
-    };
-    host.addEventListener('click', handler);
-    return () => host.removeEventListener('click', handler);
-  }, [hostRef, pages, stamp, onChoose]);
-  return null;
 }
 
 export default function App() {

@@ -224,7 +224,7 @@ async function addStampToSection({ zip, sectionXml, sectionIndex, activeHeaderTy
   return { sectionXml: updatedSection, documentRels: nextDocumentRels, contentTypes: nextContentTypes };
 }
 
-export async function exportStampedDocx(file, stamp, position, pageSize) {
+export async function exportStampedDocx(file, stamp) {
   const zip = await JSZip.loadAsync(file);
   const mainPart = zip.file('word/document.xml');
   if (!mainPart) throw new Error('This Word document is missing its main document part.');
@@ -239,34 +239,41 @@ export async function exportStampedDocx(file, stamp, position, pageSize) {
   zip.file(`word/media/${imageName}`, decodeDataUrl(stamp.dataUrl));
   contentTypes = ensurePngContentType(contentTypes);
   const stampAspect = stamp.width / stamp.height;
-  const settingsXml = zip.file('word/settings.xml') ? await zip.file('word/settings.xml').async('string') : '';
   const sections = [...documentXml.matchAll(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)/g)];
   const docPrCounter = { value: 84001 };
 
+  const pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+  if (!/<w:body\b[^>]*>/.test(documentXml)) throw new Error('This Word document has an unsupported body structure.');
+  documentXml = documentXml.replace(/(<w:body\b[^>]*>)/, `$1${pageBreak}`);
+  let firstSection = sections[0]?.[0] || '<w:sectPr></w:sectPr>';
+  if (/^<w:sectPr\b[^>]*\/>$/.test(firstSection)) {
+    firstSection = firstSection.replace(/^<w:sectPr\b([^>]*)\/>$/, '<w:sectPr$1></w:sectPr>');
+  }
+  if (!/<w:titlePg\b/.test(firstSection)) {
+    firstSection = firstSection.replace('</w:sectPr>', '<w:titlePg/></w:sectPr>');
+  }
+  const firstGeometry = firstSection.match(/<w:pgSz\b[^>]*\/>/)?.[0];
+  const widthTwips = Number(getAttribute(firstGeometry || '', 'w:w'));
+  const heightTwips = Number(getAttribute(firstGeometry || '', 'w:h'));
+  const pageWidth = widthTwips > 0 ? widthTwips : 12240;
+  const pageHeight = heightTwips > 0 ? heightTwips : 15840;
+  const stampHeightRatio = 0.36 * pageWidth / pageHeight / stampAspect;
+  const coverPosition = { x: 0.32, y: 1 - stampHeightRatio - 0.05 };
+  const updated = await addStampToSection({
+    zip, sectionXml: firstSection, sectionIndex: 0, activeHeaderTypes: ['first'],
+    documentRels, contentTypes, imageName, stamp, stampAspect, position: coverPosition,
+    pageSize: { width: pageWidth / 1440 * 96, height: pageHeight / 1440 * 96 }, docPrCounter,
+  });
+  documentRels = updated.documentRels;
+  contentTypes = updated.contentTypes;
+
   if (sections.length) {
-    const replacements = [];
-    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
-      let sectionXml = sections[sectionIndex][0];
-      const activeHeaderTypes = ['default'];
-      if (/<w:titlePg\b/.test(sectionXml)) activeHeaderTypes.push('first');
-      if (/<w:evenAndOddHeaders\b/.test(settingsXml)) activeHeaderTypes.push('even');
-      const updated = await addStampToSection({
-        zip, sectionXml, sectionIndex, activeHeaderTypes, documentRels, contentTypes,
-        imageName, stamp, stampAspect, position, pageSize, docPrCounter,
-      });
-      replacements.push(updated.sectionXml);
-      documentRels = updated.documentRels;
-      contentTypes = updated.contentTypes;
-    }
     let index = 0;
-    documentXml = documentXml.replace(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)/g, () => replacements[index++]);
-  } else {
-    const updated = await addStampToSection({
-      zip, sectionXml: '<w:sectPr></w:sectPr>', sectionIndex: 0, activeHeaderTypes: ['default'],
-      documentRels, contentTypes, imageName, stamp, stampAspect, position, pageSize, docPrCounter,
+    documentXml = documentXml.replace(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)/g, () => {
+      index += 1;
+      return index === 1 ? updated.sectionXml : sections[index - 1][0];
     });
-    documentRels = updated.documentRels;
-    contentTypes = updated.contentTypes;
+  } else {
     documentXml = documentXml.replace('</w:body>', `${updated.sectionXml}</w:body>`);
   }
 
