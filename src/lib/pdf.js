@@ -1,6 +1,7 @@
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { attachmentGridSpec } from './attachment-grid.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -58,29 +59,27 @@ function drawCenteredLines(page, lines, font, size, centerY, lineGap) {
   });
 }
 
-function drawAttachmentGridPage(page, attachments, offset, images, font, boldFont) {
+function drawAttachmentGridPage(page, attachments, offset, images, font, boldFont, layout) {
   const { width, height } = page.getSize();
-  const left = width * 0.04;
+  const { columns, rows, capacity, marginX: left, gridWidth, gridHeight } = layout;
   const top = height * 0.86;
-  const gridWidth = width - left * 2;
-  const gridHeight = height * 0.79;
-  const cellWidth = gridWidth / 4;
-  const cellHeight = gridHeight / 4;
+  const cellWidth = gridWidth / columns;
+  const cellHeight = gridHeight / rows;
   drawCenteredLines(page, ['Attachments Stamps'], boldFont, Math.min(22, width * 0.04), height * 0.95, 24);
   drawCenteredLines(page, ['Kindly verify all attachments against their respective stamps only.'], font, Math.min(10, width * 0.018), height * 0.91, 12);
-  attachments.slice(offset, offset + 16).forEach((attachment, index) => {
-    const column = index % 4;
-    const row = Math.floor(index / 4);
+  attachments.slice(offset, offset + capacity).forEach((attachment, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
     const cellLeft = left + column * cellWidth;
     const cellTop = top - row * cellHeight;
     const image = images.get(attachment.id);
     if (!image) return;
-    const maxWidth = cellWidth * 0.93;
-    const maxHeight = cellHeight * 0.48;
+    const maxWidth = cellWidth * 0.92;
+    const maxHeight = cellHeight * 0.84;
     const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
     const drawWidth = image.width * scale;
     const drawHeight = image.height * scale;
-    const imageY = cellTop - cellHeight * 0.08 - drawHeight;
+    const imageY = cellTop - cellHeight * 0.04 - drawHeight;
     page.drawImage(image, {
       x: cellLeft + (cellWidth - drawWidth) / 2,
       y: imageY,
@@ -91,7 +90,7 @@ function drawAttachmentGridPage(page, attachments, offset, images, font, boldFon
     const nameLines = wrapText(name, font, 8, cellWidth * 0.90).slice(0, 3);
     nameLines.forEach((line, lineIndex) => {
       const lineWidth = font.widthOfTextAtSize(line, 8);
-      page.drawText(line, { x: cellLeft + (cellWidth - lineWidth) / 2, y: imageY - 8 - lineIndex * 9, size: 8, font });
+      page.drawText(line, { x: cellLeft + (cellWidth - lineWidth) / 2, y: imageY - 2 - lineIndex * 9, size: 8, font });
     });
   });
 }
@@ -102,6 +101,7 @@ export async function exportStampedPdf(file, stampDataUrl, coverTitle, coverBody
   const sourcePage = document.getPages()[0];
   if (!sourcePage) throw new Error('This PDF does not contain any pages.');
   const { width, height } = sourcePage.getSize();
+  const attachmentLayout = attachmentGridSpec(width, height);
   const regularFont = await document.embedFont(StandardFonts.Helvetica);
   const boldFont = await document.embedFont(StandardFonts.HelveticaBold);
   const cover = document.insertPage(0, [width, height]);
@@ -122,9 +122,9 @@ export async function exportStampedPdf(file, stampDataUrl, coverTitle, coverBody
   for (const attachment of attachments) {
     if (attachment.stamp?.dataUrl) attachmentImages.set(attachment.id, await document.embedPng(attachment.stamp.dataUrl));
   }
-  for (let offset = 0; offset < attachments.length; offset += 16) {
+  for (let offset = 0; offset < attachments.length; offset += attachmentLayout.capacity) {
     const appendix = document.addPage([width, height]);
-    drawAttachmentGridPage(appendix, attachments, offset, attachmentImages, regularFont, boldFont);
+    drawAttachmentGridPage(appendix, attachments, offset, attachmentImages, regularFont, boldFont, attachmentLayout);
   }
   return document.save();
 }

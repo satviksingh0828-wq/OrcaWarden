@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { renderAsync } from 'docx-preview';
+import { attachmentGridSpec } from './attachment-grid.js';
 
 const NS = {
   rel: 'http://schemas.openxmlformats.org/package/2006/relationships',
@@ -199,8 +200,8 @@ function escapeXml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]);
 }
 
-function textParagraph(value, { centered = false, style = '', before = 0, after = 0 } = {}) {
-  const pPr = `${centered ? '<w:jc w:val="center"/>' : ''}${style ? `<w:pStyle w:val="${style}"/>` : ''}${before || after ? `<w:spacing w:before="${before}" w:after="${after}"/>` : ''}`;
+function textParagraph(value, { centered = false, style = '', before = 0, after = 0, pageBreakBefore = false } = {}) {
+  const pPr = `${centered ? '<w:jc w:val="center"/>' : ''}${style ? `<w:pStyle w:val="${style}"/>` : ''}${before || after ? `<w:spacing w:before="${before}" w:after="${after}"/>` : ''}${pageBreakBefore ? '<w:pageBreakBefore/>' : ''}`;
   return `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}<w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p>`;
 }
 
@@ -214,18 +215,19 @@ function ensureDocumentNamespaces(xml) {
 
 async function attachmentAppendix(zip, attachments, documentRels, contentTypes, docPrCounter, pageWidth, pageHeight, pageMargins) {
   const pages = [];
-  const tableWidth = Math.max(3600, pageWidth - pageMargins.left - pageMargins.right);
-  const cellWidth = Math.floor(tableWidth / 4);
+  const tableWidth = Math.max(1, pageWidth - pageMargins.left - pageMargins.right);
+  const layout = attachmentGridSpec(pageWidth, pageHeight, tableWidth, pageHeight - pageMargins.top - pageMargins.bottom - 1900);
+  const cellWidth = Math.floor(tableWidth / layout.columns);
   const imageWidth = Math.floor(cellWidth * 635 * 0.92);
-  const rowHeight = Math.max(1500, Math.floor((pageHeight - pageMargins.top - pageMargins.bottom - 1700) / 4));
-  for (let start = 0; start < attachments.length; start += 16) {
-    const chunk = attachments.slice(start, start + 16);
-    const columns = Array.from({ length: 4 }, () => `<w:gridCol w:w="${cellWidth}"/>`).join('');
-    let table = `<w:tbl><w:tblPr><w:tblW w:w="${tableWidth}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="35" w:type="dxa"/><w:left w:w="35" w:type="dxa"/><w:bottom w:w="35" w:type="dxa"/><w:right w:w="35" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${columns}`;
-    for (let row = 0; row < 4; row += 1) {
+  const rowHeight = Math.floor(layout.cellHeight);
+  for (let start = 0; start < attachments.length; start += layout.capacity) {
+    const chunk = attachments.slice(start, start + layout.capacity);
+    const columns = Array.from({ length: layout.columns }, () => `<w:gridCol w:w="${cellWidth}"/>`).join('');
+    let table = `<w:tbl><w:tblPr><w:tblW w:w="${tableWidth}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${columns}</w:tblGrid>`;
+    for (let row = 0; row < layout.rows; row += 1) {
       table += `<w:tr><w:trPr><w:trHeight w:val="${rowHeight}" w:hRule="atLeast"/></w:trPr>`;
-      for (let col = 0; col < 4; col += 1) {
-        const item = chunk[row * 4 + col];
+      for (let col = 0; col < layout.columns; col += 1) {
+        const item = chunk[row * layout.columns + col];
         let cell = '<w:p/>';
         if (item) {
           const fileName = typeof item.fileName === 'string' ? item.fileName : '';
@@ -246,7 +248,7 @@ async function attachmentAppendix(zip, attachments, documentRels, contentTypes, 
       table += '</w:tr>';
     }
     table += '</w:tbl>';
-    pages.push(`${start ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : ''}${textParagraph('Attachments Stamps', { centered: true, style: 'Title' })}${textParagraph('Kindly verify all attachments against their respective stamps only.', { centered: true })}${table}`);
+    pages.push(`${textParagraph('Attachments Stamps', { centered: true, style: 'Title', pageBreakBefore: true })}${textParagraph('Kindly verify all attachments against their respective stamps only.', { centered: true })}${table}`);
   }
   return { xml: pages.join(''), documentRels, contentTypes };
 }
@@ -355,7 +357,7 @@ export async function exportStampedDocx(file, stamp, coverTitle = '', coverBody 
     const bodyClose = documentXml.lastIndexOf('</w:body>');
     const trailingSectPr = documentXml.slice(0, bodyClose).match(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)\s*$/);
     const insertAt = trailingSectPr ? trailingSectPr.index : bodyClose;
-    documentXml = `${documentXml.slice(0, insertAt)}${pageBreak}${appendix.xml}${documentXml.slice(insertAt)}`;
+    documentXml = `${documentXml.slice(0, insertAt)}${appendix.xml}${documentXml.slice(insertAt)}`;
   }
   zip.file('word/document.xml', documentXml);
   zip.file('word/_rels/document.xml.rels', documentRels);

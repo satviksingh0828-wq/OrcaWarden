@@ -4,6 +4,7 @@ import { ArrowDownToLine, BadgeCheck, Bitcoin, CircleAlert, FileText, LockKeyhol
 import { createDocumentCode, createStamp } from './lib/stamp.js';
 import { exportStampedPdf, previewPdf } from './lib/pdf.js';
 import { exportStampedDocx, previewDocx } from './lib/docx.js';
+import { attachmentGridSpec } from './lib/attachment-grid.js';
 
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const DEFAULT_COVER_BODY = 'This document and all its attachments are being stamped and secured on the Bitcoin blockchain. Kindly verify the integrity of the documents before use.';
@@ -57,13 +58,13 @@ function PageCard({ page, index, stamp, coverTitle, setCoverTitle, coverBody, se
   </div>;
 }
 
-function AttachmentGridPage({ attachments, index, onRename }) {
+function AttachmentGridPage({ attachments, index, onRename, gridSpec, pageSize }) {
   return <div className="page-card attachment-page-card">
-    <div className="attachment-sheet">
+    <div className="attachment-sheet" style={{ aspectRatio: `${pageSize.width} / ${pageSize.height}`, paddingLeft: `${gridSpec.marginX / pageSize.width * 100}%`, paddingRight: `${gridSpec.marginX / pageSize.width * 100}%` }}>
       <h2>Attachments Stamps</h2>
       <p>Kindly verify all attachments against their respective stamps only.</p>
-      <div className="attachment-grid">
-        {attachments.slice(index * 16, (index + 1) * 16).map((attachment) => <div className="attachment-tile" key={attachment.id}>
+      <div className="attachment-grid" style={{ gridTemplateColumns: `repeat(${gridSpec.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${gridSpec.rows}, minmax(0, 1fr))` }}>
+        {attachments.slice(index * gridSpec.capacity, (index + 1) * gridSpec.capacity).map((attachment) => <div className="attachment-tile" key={attachment.id}>
           {attachment.stamp && <img src={attachment.stamp.dataUrl} alt={`Stamp for ${attachment.fileName}`} />}
           <input aria-label="Attachment file name" value={attachment.fileName} onChange={(event) => onRename(attachment.id, event.target.value)} />
         </div>)}
@@ -81,6 +82,7 @@ function HomePage() {
   const [pages, setPages] = useState([]);
   const [stamp, setStamp] = useState(null);
   const [attachments, setAttachments] = useState([]);
+  const [attachmentPageSize, setAttachmentPageSize] = useState({ width: 816, height: 1056 });
   const [coverTitle, setCoverTitle] = useState('');
   const [coverBody, setCoverBody] = useState(DEFAULT_COVER_BODY);
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
@@ -108,6 +110,7 @@ function HomePage() {
         if (kind === 'pdf') {
           const previews = await previewPdf(file, (current, total) => setProgress({ current, total }));
           if (!cancelled) {
+            if (previews[0]) setAttachmentPageSize({ width: previews[0].width, height: previews[0].height });
             setPages([{ id: 'cover', cover: true, width: previews[0]?.width, height: previews[0]?.height }, ...previews.map((page) => ({ ...page, id: `pdf-${page.number}` }))]);
             setProgress({ current: previews.length, total: previews.length });
           }
@@ -118,6 +121,17 @@ function HomePage() {
           if (cancelled) return;
           const pageNodes = [...container.querySelectorAll('.docx-wrapper section.docx, section.docx')];
           if (!pageNodes.length) throw new Error('No pages were found in this Word file. Try saving it as a .docx document and upload it again.');
+          const appendixPageNode = pageNodes.at(-1);
+          const pageRect = appendixPageNode.getBoundingClientRect();
+          const pageStyle = window.getComputedStyle(appendixPageNode);
+          const horizontalPadding = parseFloat(pageStyle.paddingLeft || '0') + parseFloat(pageStyle.paddingRight || '0');
+          const verticalPadding = parseFloat(pageStyle.paddingTop || '0') + parseFloat(pageStyle.paddingBottom || '0');
+          if (pageRect.width && pageRect.height) setAttachmentPageSize({
+            width: pageRect.width,
+            height: pageRect.height,
+            contentWidth: pageRect.width - horizontalPadding,
+            contentHeight: pageRect.height - verticalPadding,
+          });
           pageNodes.forEach((element, index) => { element.dataset.owPage = String(index); });
           setPages(pageNodes.map((element, index) => ({ id: `docx-${index}`, element, number: index + 1 })));
         }
@@ -220,7 +234,14 @@ function HomePage() {
     if (wordPreviewRef.current) wordPreviewRef.current.innerHTML = '';
   }
 
-  const totalPreviewPages = pages.length + (kind === 'docx' ? 1 : 0) + Math.ceil(attachments.length / 16);
+  const gridSpec = attachmentGridSpec(
+    attachmentPageSize.width,
+    attachmentPageSize.height,
+    attachmentPageSize.contentWidth,
+    attachmentPageSize.contentHeight ? attachmentPageSize.contentHeight - attachmentPageSize.height * 0.113 : undefined,
+  );
+  const attachmentPageCount = Math.ceil(attachments.length / gridSpec.capacity);
+  const totalPreviewPages = pages.length + (kind === 'docx' ? 1 : 0) + attachmentPageCount;
 
   return <div className="app-shell">
     <main className="workspace">
@@ -257,12 +278,12 @@ function HomePage() {
           {loading && <div className="loading-card"><span className="spinner dark-spinner" /><div><strong>Preparing a local preview</strong><span>{kind === 'pdf' && progress.total ? `Rendering page ${progress.current} of ${progress.total}` : 'Reading document pages'}</span></div></div>}
           {kind === 'pdf' && pages.length > 0 && <div className="pages-list">
             {pages.map((page, index) => <PageCard key={page.id} page={page} index={index} stamp={stamp} coverTitle={coverTitle} setCoverTitle={setCoverTitle} coverBody={coverBody} setCoverBody={setCoverBody} />)}
-            {Array.from({ length: Math.ceil(attachments.length / 16) }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} />)}
+            {Array.from({ length: attachmentPageCount }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} gridSpec={gridSpec} pageSize={attachmentPageSize} />)}
           </div>}
           {kind === 'docx' && <div className="pages-list docx-pages-list">
             <PageCard page={{ cover: true, width: 816, height: 1056 }} index={0} stamp={stamp} coverTitle={coverTitle} setCoverTitle={setCoverTitle} coverBody={coverBody} setCoverBody={setCoverBody} />
             <div className="word-preview-host" ref={wordPreviewRef} />
-            {Array.from({ length: Math.ceil(attachments.length / 16) }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} />)}
+            {Array.from({ length: attachmentPageCount }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} gridSpec={gridSpec} pageSize={attachmentPageSize} />)}
           </div>}
           <div className="preview-disclaimer"><Bitcoin size={14} /><span>The stamp text says “Secured on Bitcoin Blockchain.” This app does not submit or verify a Bitcoin transaction.</span></div>
         </section>
