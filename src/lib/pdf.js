@@ -72,24 +72,25 @@ function drawAttachmentGridPage(page, attachments, offset, images, font, boldFon
     const row = Math.floor(index / 4);
     const cellLeft = left + column * cellWidth;
     const cellTop = top - row * cellHeight;
-    const name = pdfText(attachment.fileName || 'Attachment');
-    const nameLines = wrapText(name, font, 8, cellWidth * 0.90).slice(0, 3);
-    nameLines.forEach((line, lineIndex) => {
-      const lineWidth = font.widthOfTextAtSize(line, 8);
-      page.drawText(line, { x: cellLeft + (cellWidth - lineWidth) / 2, y: cellTop - 15 - lineIndex * 10, size: 8, font });
-    });
     const image = images.get(attachment.id);
     if (!image) return;
-    const maxWidth = cellWidth * 0.88;
+    const maxWidth = cellWidth * 0.93;
     const maxHeight = cellHeight * 0.48;
     const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
     const drawWidth = image.width * scale;
     const drawHeight = image.height * scale;
+    const imageY = cellTop - cellHeight * 0.10 - drawHeight;
     page.drawImage(image, {
       x: cellLeft + (cellWidth - drawWidth) / 2,
-      y: cellTop - cellHeight + cellHeight * 0.10,
+      y: imageY,
       width: drawWidth,
       height: drawHeight,
+    });
+    const name = pdfText(attachment.fileName || 'Attachment');
+    const nameLines = wrapText(name, font, 8, cellWidth * 0.90).slice(0, 3);
+    nameLines.forEach((line, lineIndex) => {
+      const lineWidth = font.widthOfTextAtSize(line, 8);
+      page.drawText(line, { x: cellLeft + (cellWidth - lineWidth) / 2, y: imageY - 10 - lineIndex * 9, size: 8, font });
     });
   });
 }
@@ -107,7 +108,7 @@ export async function exportStampedPdf(file, stampDataUrl, coverTitle, coverBody
   drawCenteredLines(cover, titleLines, boldFont, Math.min(30, width * 0.055), height * 0.64, Math.min(36, width * 0.065));
   const bodyLines = wrapText(coverBody, regularFont, Math.min(15, width * 0.028), width * 0.72).slice(0, 6);
   drawCenteredLines(cover, bodyLines, regularFont, Math.min(15, width * 0.028), height * 0.52, Math.min(21, width * 0.038));
-  const stampWidth = width * 0.36;
+  const stampWidth = width * 0.44;
   const stampHeight = stampWidth * (stampImage.height / stampImage.width);
   cover.drawImage(stampImage, {
     x: (width - stampWidth) / 2,

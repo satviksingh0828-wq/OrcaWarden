@@ -63,8 +63,8 @@ function AttachmentGridPage({ attachments, index, onRename }) {
       <h2>Attachments</h2>
       <div className="attachment-grid">
         {attachments.slice(index * 16, (index + 1) * 16).map((attachment) => <div className="attachment-tile" key={attachment.id}>
-          <input aria-label="Attachment file name" value={attachment.fileName} onChange={(event) => onRename(attachment.id, event.target.value)} />
           {attachment.stamp && <img src={attachment.stamp.dataUrl} alt={`Stamp for ${attachment.fileName}`} />}
+          <input aria-label="Attachment file name" value={attachment.fileName} onChange={(event) => onRename(attachment.id, event.target.value)} />
         </div>)}
       </div>
     </div>

@@ -151,7 +151,7 @@ function sectionGeometry(sectionXml, fallbackPageSize, stampAspect, position) {
   const heightTwips = Number(getAttribute(pageSizeTag || '', 'w:h'));
   const pageWidthEmu = widthTwips > 0 ? widthTwips * 635 : (fallbackPageSize?.width || 816) * 9525;
   const pageHeightEmu = heightTwips > 0 ? heightTwips * 635 : (fallbackPageSize?.height || 1056) * 9525;
-  const stampWidthEmu = pageWidthEmu * 0.36;
+  const stampWidthEmu = pageWidthEmu * 0.44;
   const stampHeightEmu = stampWidthEmu / stampAspect;
   const x = Math.min(Math.max(position.x, 0), 0.64);
   const y = Math.min(Math.max(position.y, 0), 1 - stampHeightEmu / pageHeightEmu);
@@ -232,9 +232,9 @@ async function attachmentAppendix(zip, attachments, documentRels, contentTypes, 
           documentRels = appendRelationship(documentRels, relId, `${NS.officeRel}/image`, `media/${imageName}`);
           contentTypes = ensurePngContentType(contentTypes);
           const aspect = item.stamp?.width && item.stamp?.height ? item.stamp.width / item.stamp.height : 480 / 143;
-          const width = 1.25 * 914400;
+          const width = 1.40 * 914400;
           const height = Math.round(width / aspect);
-          cell = `${textParagraph(fileName, { centered: true })}<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${inlineStampDrawing(relId, width, height, docPrCounter.value++)}</w:p>`;
+          cell = `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${inlineStampDrawing(relId, width, height, docPrCounter.value++)}</w:p>${textParagraph(fileName, { centered: true })}`;
         }
         table += `<w:tc><w:tcPr><w:tcW w:w="2160" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${cell}</w:tc>`;
       }
@@ -309,8 +309,8 @@ export async function exportStampedDocx(file, stamp, coverTitle = '', coverBody 
   const heightTwips = Number(getAttribute(firstGeometry || '', 'w:h'));
   const pageWidth = widthTwips > 0 ? widthTwips : 12240;
   const pageHeight = heightTwips > 0 ? heightTwips : 15840;
-  const stampHeightRatio = 0.36 * pageWidth / pageHeight / stampAspect;
-  const coverPosition = { x: 0.32, y: 1 - stampHeightRatio - 0.05 };
+  const stampHeightRatio = 0.44 * pageWidth / pageHeight / stampAspect;
+  const coverPosition = { x: 0.28, y: 1 - stampHeightRatio - 0.05 };
   const updated = await addStampToSection({
     zip, sectionXml: firstSection, sectionIndex: 0, activeHeaderTypes: ['first'],
     documentRels, contentTypes, imageName, stamp, stampAspect, position: coverPosition,
