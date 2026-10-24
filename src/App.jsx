@@ -60,7 +60,8 @@ function PageCard({ page, index, stamp, coverTitle, setCoverTitle, coverBody, se
 function AttachmentGridPage({ attachments, index, onRename }) {
   return <div className="page-card attachment-page-card">
     <div className="attachment-sheet">
-      <h2>Attachments</h2>
+      <h2>Attachments Stamps</h2>
+      <p>Kindly verify all attachments against their respective stamps only.</p>
       <div className="attachment-grid">
         {attachments.slice(index * 16, (index + 1) * 16).map((attachment) => <div className="attachment-tile" key={attachment.id}>
           {attachment.stamp && <img src={attachment.stamp.dataUrl} alt={`Stamp for ${attachment.fileName}`} />}

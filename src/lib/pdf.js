@@ -61,12 +61,13 @@ function drawCenteredLines(page, lines, font, size, centerY, lineGap) {
 function drawAttachmentGridPage(page, attachments, offset, images, font, boldFont) {
   const { width, height } = page.getSize();
   const left = width * 0.04;
-  const top = height * 0.88;
+  const top = height * 0.86;
   const gridWidth = width - left * 2;
-  const gridHeight = height * 0.80;
+  const gridHeight = height * 0.79;
   const cellWidth = gridWidth / 4;
   const cellHeight = gridHeight / 4;
-  drawCenteredLines(page, ['Attachments'], boldFont, Math.min(22, width * 0.04), height * 0.93, 24);
+  drawCenteredLines(page, ['Attachments Stamps'], boldFont, Math.min(22, width * 0.04), height * 0.95, 24);
+  drawCenteredLines(page, ['Kindly verify all attachments against their respective stamps only.'], font, Math.min(10, width * 0.018), height * 0.91, 12);
   attachments.slice(offset, offset + 16).forEach((attachment, index) => {
     const column = index % 4;
     const row = Math.floor(index / 4);
@@ -79,7 +80,7 @@ function drawAttachmentGridPage(page, attachments, offset, images, font, boldFon
     const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
     const drawWidth = image.width * scale;
     const drawHeight = image.height * scale;
-    const imageY = cellTop - cellHeight * 0.10 - drawHeight;
+    const imageY = cellTop - cellHeight * 0.08 - drawHeight;
     page.drawImage(image, {
       x: cellLeft + (cellWidth - drawWidth) / 2,
       y: imageY,
@@ -90,7 +91,7 @@ function drawAttachmentGridPage(page, attachments, offset, images, font, boldFon
     const nameLines = wrapText(name, font, 8, cellWidth * 0.90).slice(0, 3);
     nameLines.forEach((line, lineIndex) => {
       const lineWidth = font.widthOfTextAtSize(line, 8);
-      page.drawText(line, { x: cellLeft + (cellWidth - lineWidth) / 2, y: imageY - 10 - lineIndex * 9, size: 8, font });
+      page.drawText(line, { x: cellLeft + (cellWidth - lineWidth) / 2, y: imageY - 8 - lineIndex * 9, size: 8, font });
     });
   });
 }

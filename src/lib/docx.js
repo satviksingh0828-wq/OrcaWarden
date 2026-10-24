@@ -212,13 +212,18 @@ function ensureDocumentNamespaces(xml) {
   return xml.replace(/<w:document\b[^>]*>/, (tag) => Object.entries({ r: NS.officeRel, wp: NS.wp, a: NS.drawing, pic: NS.picture }).reduce((value, [prefix, uri]) => ensureNamespace(value, prefix, uri), tag));
 }
 
-async function attachmentAppendix(zip, attachments, documentRels, contentTypes, docPrCounter) {
+async function attachmentAppendix(zip, attachments, documentRels, contentTypes, docPrCounter, pageWidth, pageHeight, pageMargins) {
   const pages = [];
+  const tableWidth = Math.max(3600, pageWidth - pageMargins.left - pageMargins.right);
+  const cellWidth = Math.floor(tableWidth / 4);
+  const imageWidth = Math.floor(cellWidth * 635 * 0.92);
+  const rowHeight = Math.max(1500, Math.floor((pageHeight - pageMargins.top - pageMargins.bottom - 1700) / 4));
   for (let start = 0; start < attachments.length; start += 16) {
     const chunk = attachments.slice(start, start + 16);
-    let table = '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>' + '<w:gridCol w:w="2160"/>'.repeat(4) + '</w:tblGrid>';
+    const columns = Array.from({ length: 4 }, () => `<w:gridCol w:w="${cellWidth}"/>`).join('');
+    let table = `<w:tbl><w:tblPr><w:tblW w:w="${tableWidth}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="35" w:type="dxa"/><w:left w:w="35" w:type="dxa"/><w:bottom w:w="35" w:type="dxa"/><w:right w:w="35" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${columns}`;
     for (let row = 0; row < 4; row += 1) {
-      table += '<w:tr>';
+      table += `<w:tr><w:trPr><w:trHeight w:val="${rowHeight}" w:hRule="atLeast"/></w:trPr>`;
       for (let col = 0; col < 4; col += 1) {
         const item = chunk[row * 4 + col];
         let cell = '<w:p/>';
@@ -232,16 +237,16 @@ async function attachmentAppendix(zip, attachments, documentRels, contentTypes, 
           documentRels = appendRelationship(documentRels, relId, `${NS.officeRel}/image`, `media/${imageName}`);
           contentTypes = ensurePngContentType(contentTypes);
           const aspect = item.stamp?.width && item.stamp?.height ? item.stamp.width / item.stamp.height : 480 / 143;
-          const width = 1.40 * 914400;
+          const width = imageWidth;
           const height = Math.round(width / aspect);
-          cell = `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${inlineStampDrawing(relId, width, height, docPrCounter.value++)}</w:p>${textParagraph(fileName, { centered: true })}`;
+          cell = `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr>${inlineStampDrawing(relId, width, height, docPrCounter.value++)}</w:p><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(fileName)}</w:t></w:r></w:p>`;
         }
-        table += `<w:tc><w:tcPr><w:tcW w:w="2160" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${cell}</w:tc>`;
+        table += `<w:tc><w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>${cell}</w:tc>`;
       }
       table += '</w:tr>';
     }
     table += '</w:tbl>';
-    pages.push(`${start ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : ''}${textParagraph('Attachments', { centered: true, style: 'Title' })}${table}`);
+    pages.push(`${start ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : ''}${textParagraph('Attachments Stamps', { centered: true, style: 'Title' })}${textParagraph('Kindly verify all attachments against their respective stamps only.', { centered: true })}${table}`);
   }
   return { xml: pages.join(''), documentRels, contentTypes };
 }
@@ -330,7 +335,20 @@ export async function exportStampedDocx(file, stamp, coverTitle = '', coverBody 
   }
 
   if (attachments?.length) {
-    const appendix = await attachmentAppendix(zip, attachments, documentRels, contentTypes, docPrCounter);
+    const appendixSection = sections.at(-1)?.[0] || firstSection;
+    const pgSz = appendixSection.match(/<w:pgSz\b[^>]*\/>/)?.[0] || '';
+    const pgMar = appendixSection.match(/<w:pgMar\b[^>]*\/>/)?.[0] || '';
+    const appendix = await attachmentAppendix(
+      zip, attachments, documentRels, contentTypes, docPrCounter,
+      Number(getAttribute(pgSz, 'w:w')) || 12240,
+      Number(getAttribute(pgSz, 'w:h')) || 15840,
+      {
+        left: Number(getAttribute(pgMar, 'w:left')) || 1440,
+        right: Number(getAttribute(pgMar, 'w:right')) || 1440,
+        top: Number(getAttribute(pgMar, 'w:top')) || 1440,
+        bottom: Number(getAttribute(pgMar, 'w:bottom')) || 1440,
+      },
+    );
     documentRels = appendix.documentRels;
     contentTypes = appendix.contentTypes;
     documentXml = ensureDocumentNamespaces(documentXml);
