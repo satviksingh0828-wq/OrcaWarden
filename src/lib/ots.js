@@ -4,7 +4,11 @@ async function postFile(path, code, file) {
   form.append('file', file, file.name || 'document');
   const response = await fetch(path, { method: 'POST', body: form });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'The secure Render API request failed.');
+  if (!response.ok) {
+    const detail = String(payload.error || '');
+    if (/opentimestamps/i.test(detail)) throw new Error('OrcaWarden could not complete the proof request. Please try again.');
+    throw new Error(detail || 'The secure OrcaWarden request failed.');
+  }
   return payload;
 }
 
@@ -15,7 +19,7 @@ export function getTimestampStorageConfigurationError() {
   return '';
 }
 export async function timestampAndSave(code, file, onStatus = () => {}) {
-  onStatus('Uploading the document securely to Render…');
+  onStatus('Uploading the document securely to OrcaWarden…');
   await postFile('/api/timestamp', code, file);
   onStatus('Encrypted proof saved.');
 }

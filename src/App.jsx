@@ -33,6 +33,7 @@ function VerifyPage({ code }) {
   const [state, setState] = useState('idle');
   const [message, setMessage] = useState('');
   const [verificationLog, setVerificationLog] = useState([]);
+  const [showVerificationLog, setShowVerificationLog] = useState(false);
 
   async function verifyFile() {
     if (!candidate || state === 'checking') return;
@@ -41,13 +42,24 @@ function VerifyPage({ code }) {
     try {
       const result = await verifyOpenTimestamp(candidate, code);
       const attestations = result.attestations || {};
-      setVerificationLog(Object.entries(attestations).flatMap(([calendar, entries]) =>
-        (Array.isArray(entries) ? entries : [entries]).map((entry) => ({
+      const attestationLog = Object.keys(attestations).map((unixTime) => {
+        const seconds = Number(unixTime);
+        const attestationDate = new Date(seconds * 1000);
+        return {
           source: 'OrcaWarden',
-          status: result.blockchainVerified ? 'Bitcoin blockchain attestation verified' : 'Proof submitted; awaiting Bitcoin confirmation',
-          detail: entry?.height ? `Bitcoin block ${entry.height}` : calendar.replace(/https?:\/\//, '').split('/')[0],
-        })),
-      ));
+          status: 'Bitcoin blockchain attestation verified',
+          detail: Number.isSafeInteger(seconds) && seconds > 0 && !Number.isNaN(attestationDate.getTime())
+            ? `Attestation time (UTC): ${attestationDate.toISOString()}`
+            : 'Bitcoin attestation recorded',
+        };
+      });
+      setVerificationLog(result.matches
+        ? [
+            { source: 'OrcaWarden', status: 'Document integrity check passed', detail: 'SHA-256 document hash matches the stored proof' },
+            { source: 'OrcaWarden', status: result.blockchainVerified ? 'Bitcoin confirmation verified' : 'Bitcoin confirmation pending', detail: result.blockchainVerified ? 'The proof is anchored to the Bitcoin blockchain' : 'No Bitcoin attestation is confirmed yet' },
+            ...attestationLog,
+          ]
+        : [{ source: 'OrcaWarden', status: 'Document integrity check failed', detail: 'The uploaded file does not match the stored proof' }]);
       setState(result.matches ? (result.blockchainVerified ? 'confirmed' : 'pending') : 'invalid');
       setMessage(!result.matches
         ? 'The uploaded document does not match the OrcaWarden proof saved for this document number.'
@@ -56,7 +68,8 @@ function VerifyPage({ code }) {
           : 'The uploaded document matches the OrcaWarden proof, but the proof is still waiting for Bitcoin blockchain confirmation.');
     } catch (reason) {
       setState('error');
-      setMessage(reason?.message || 'The proof could not be checked.');
+      setVerificationLog([{ source: 'OrcaWarden', status: 'Verification could not be completed', detail: 'The proof service returned an error; try again later' }]);
+      setMessage('OrcaWarden could not complete the blockchain verification. Please try again later.');
     }
   }
 
@@ -68,11 +81,12 @@ function VerifyPage({ code }) {
         {valid ? <>
           <div className="verify-number">{code}</div>
           <p className="verify-copy">Upload a document to check its OrcaWarden proof against Bitcoin blockchain attestations.</p>
-          <label className="verify-dropzone"> <Upload size={24} /><strong>{candidate ? candidate.name : 'Choose a document file'}</strong><span>{candidate ? 'Click to replace the selected file' : 'PDF or Word (.docx), up to 40 MB'}</span><input className="sr-only" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { setCandidate(event.target.files?.[0] || null); setState('idle'); setMessage(''); }} /></label>
+          <label className="verify-dropzone"> <Upload size={24} /><strong>{candidate ? candidate.name : 'Choose a document file'}</strong><span>{candidate ? 'Click to replace the selected file' : 'PDF or Word (.docx), up to 40 MB'}</span><input className="sr-only" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { setCandidate(event.target.files?.[0] || null); setState('idle'); setMessage(''); setVerificationLog([]); setShowVerificationLog(false); }} /></label>
           <button className="button button-primary verify-button" disabled={!candidate || state === 'checking' || !isTimestampStorageConfigured()} onClick={verifyFile}>{state === 'checking' ? <><span className="spinner" /> Checking with OrcaWarden…</> : 'Verify document'}</button>
           {!isTimestampStorageConfigured() && <p className="verify-copy verify-config-note">{getTimestampStorageConfigurationError()}</p>}
           {message && <div className={`verify-note ${state === 'confirmed' ? 'verify-note-success' : state === 'pending' ? 'verify-note-pending' : state === 'invalid' || state === 'error' ? 'verify-note-error' : ''}`}>{message}</div>}
-          {verificationLog.length > 0 && <section className="verification-log" aria-live="polite"><h2>OrcaWarden verification log</h2>{verificationLog.map((entry, index) => <div className="verification-log-row" key={`${entry.detail}-${index}`}><strong>{entry.source}</strong><span>{entry.status}</span><small>{entry.detail}</small></div>)}</section>}
+          <button className="button button-secondary verification-log-toggle" type="button" disabled={!verificationLog.length} aria-expanded={showVerificationLog} onClick={() => setShowVerificationLog((visible) => !visible)}>{showVerificationLog ? 'Hide logs' : 'See logs'}</button>
+          {showVerificationLog && verificationLog.length > 0 && <section className="verification-log" aria-live="polite"><h2>OrcaWarden verification log</h2>{verificationLog.map((entry, index) => <div className="verification-log-row" key={`${entry.detail}-${index}`}><strong>{entry.source}</strong><span>{entry.status}</span><small>{entry.detail}</small></div>)}</section>}
         </> : <p className="verify-copy">The link must contain one 10-digit document number.</p>}
       </div>
     </main>
@@ -255,14 +269,14 @@ function HomePage() {
       }
       downloadBlob(output, outputName);
       const jobs = [{ code: stamp.code, file: output, label: 'Main document' }, ...attachments.filter((item) => item.sourceFile).map((item) => ({ code: item.stamp.code, file: item.sourceFile, label: item.fileName }))];
-      setTimestampProgress({ current: 0, total: jobs.length, label: '', status: 'Starting OpenTimestamps…' });
+      setTimestampProgress({ current: 0, total: jobs.length, label: '', status: 'Starting OrcaWarden verification…' });
       for (let index = 0; index < jobs.length; index += 1) {
         const job = jobs[index];
         setTimestampProgress({ current: index, total: jobs.length, label: job.label, status: 'Hashing and submitting…' });
         await timestampAndSave(job.code, job.file, (status) => setTimestampProgress({ current: index, total: jobs.length, label: job.label, status }));
         setTimestampProgress({ current: index + 1, total: jobs.length, label: job.label, status: 'Saved' });
       }
-      setNotice(`Stamped copy downloaded and ${jobs.length} OpenTimestamps proof${jobs.length === 1 ? '' : 's'} saved.`);
+      setNotice(`Stamped copy downloaded and ${jobs.length} OrcaWarden proof${jobs.length === 1 ? '' : 's'} saved.`);
     } catch (reason) {
       setError(reason?.message || 'The stamped file could not be created. Try another document or position.');
       setNotice('');
@@ -325,8 +339,8 @@ function HomePage() {
             {error && <div className="alert alert-error"><CircleAlert size={16} /><span>{error}</span></div>}
             {notice && !error && <div className="alert alert-success"><BadgeCheck size={16} /><span>{notice}</span></div>}
             <button className="button button-primary download-button" disabled={!stamp || loading || busy || attachmentsBusy || !pages.length} onClick={createDownload}>{busy ? <><span className="spinner" /> Creating file…</> : <><ArrowDownToLine size={17} /> Stamp &amp; download</>}</button>
-            {timestampProgress.total > 0 && <div className="timestamp-progress" role="status"><div className="timestamp-progress-heading"><strong>OpenTimestamps</strong><span>{timestampProgress.current}/{timestampProgress.total}</span></div><div className="progress-track"><span style={{ width: `${timestampProgress.current / timestampProgress.total * 100}%` }} /></div><p>{timestampProgress.label ? `${timestampProgress.label}: ` : ''}{timestampProgress.status}</p></div>}
-            <p className="privacy-note"><LockKeyhole size={13} /> Your document is hashed locally; only its hash is sent to OpenTimestamps.</p>
+            {timestampProgress.total > 0 && <div className="timestamp-progress" role="status"><div className="timestamp-progress-heading"><strong>OrcaWarden</strong><span>{timestampProgress.current}/{timestampProgress.total}</span></div><div className="progress-track"><span style={{ width: `${timestampProgress.current / timestampProgress.total * 100}%` }} /></div><p>{timestampProgress.label ? `${timestampProgress.label}: ` : ''}{timestampProgress.status}</p></div>}
+            <p className="privacy-note"><LockKeyhole size={13} /> Your document is hashed locally; OrcaWarden securely records its proof for Bitcoin verification.</p>
           </div>
         </aside>
 
@@ -342,10 +356,10 @@ function HomePage() {
             <div className="word-preview-host" ref={wordPreviewRef} />
             {Array.from({ length: attachmentPageCount }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} gridSpec={gridSpec} pageSize={attachmentPageSize} />)}
           </div>}
-          <div className="preview-disclaimer"><Bitcoin size={14} /><span>OpenTimestamps proofs are checked against Bitcoin attestations during public verification. Calendar submission may remain pending until Bitcoin confirmation.</span></div>
+          <div className="preview-disclaimer"><Bitcoin size={14} /><span>OrcaWarden proofs are checked against Bitcoin attestations during public verification. Confirmation may remain pending until the proof is anchored.</span></div>
         </section>
       </section>}
-      {busy && timestampProgress.total > 0 && <div className="timestamp-modal-backdrop" role="dialog" aria-live="polite" aria-label="OpenTimestamps progress"><div className="timestamp-modal"><div className="timestamp-modal-topline"><span className="spinner dark-spinner" /><p className="section-kicker">OPEN TIMESTAMPS</p></div><h2>Securing your documents</h2><p className="timestamp-modal-copy">Each document is hashed locally and submitted one at a time. Do not close this window until all proofs are saved.</p><div className="timestamp-progress-heading"><strong>{timestampProgress.label || 'Preparing documents'}</strong><span>{timestampProgress.current}/{timestampProgress.total}</span></div><div className="progress-track"><span style={{ width: `${timestampProgress.current / timestampProgress.total * 100}%` }} /></div><p className="timestamp-modal-status">{timestampProgress.status}</p></div></div>}
+      {busy && timestampProgress.total > 0 && <div className="timestamp-modal-backdrop" role="dialog" aria-live="polite" aria-label="OrcaWarden progress"><div className="timestamp-modal"><div className="timestamp-modal-topline"><span className="spinner dark-spinner" /><p className="section-kicker">ORCAWARDEN</p></div><h2>Securing your documents</h2><p className="timestamp-modal-copy">Each document is hashed locally and submitted one at a time. Do not close this window until all proofs are saved.</p><div className="timestamp-progress-heading"><strong>{timestampProgress.label || 'Preparing documents'}</strong><span>{timestampProgress.current}/{timestampProgress.total}</span></div><div className="progress-track"><span style={{ width: `${timestampProgress.current / timestampProgress.total * 100}%` }} /></div><p className="timestamp-modal-status">{timestampProgress.status}</p></div></div>}
 
       {error && !file && <div className="alert alert-error upload-error"><CircleAlert size={16} /><span>{error}</span></div>}
     </main>

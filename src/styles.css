@@ -133,6 +133,7 @@ body{overflow:auto}
 .verify-dropzone strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#29464b;font-size:13px}
 .verify-dropzone span{color:#849598;font-size:11px}
 .verify-note-pending{background:#fbf7ef;border-color:#ede1cd;color:#7b6745}
+.verification-log-toggle{width:100%;margin-top:14px}
 .auth-gate{min-height:100dvh;display:grid;place-items:center;padding:24px;background:#fff;color:#111;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.auth-card{width:min(100%,440px);border:1px solid #111;padding:28px;background:#fff}.auth-card h1{font-size:22px;margin:12px 0}.auth-card p{font-size:13px;line-height:1.6}.auth-code-label{display:grid;gap:8px;margin:20px 0 14px;font-size:12px}.auth-code-label input{width:100%;border:1px solid #111;border-radius:0;padding:12px;font:700 24px ui-monospace,monospace;letter-spacing:.35em;text-align:center;color:#111;background:#fff}.auth-card .button{width:100%}.auth-error{border:1px solid #111;padding:9px}
 
 .access-denied{min-height:100dvh;display:grid;place-items:center;padding:24px;background:#fff;color:#111;font:14px ui-monospace,SFMono-Regular,Menlo,monospace}.access-denied section{width:min(100%,620px);border:1px solid #111;padding:28px}.access-denied p{font-size:11px;letter-spacing:.08em}.access-denied h1{font:700 clamp(20px,4vw,30px) ui-monospace,SFMono-Regular,Menlo,monospace}
