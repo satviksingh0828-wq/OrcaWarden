@@ -40,3 +40,26 @@ body{overflow:hidden}
 .docx-pages-list .word-preview-host .docx-wrapper{padding:0!important}
 @media(max-width:900px){.workspace{padding:0}}
 @media(max-width:640px){.workspace{padding:0}.control-rail{border-right:0}}
+.control-rail{overflow:auto}
+.attachments-section{padding-top:14px;padding-bottom:14px}
+.attachments-section .section-kicker{margin-bottom:10px}
+.button-secondary{background:#e8f0f0;color:#23484f;box-shadow:none}
+.button-secondary:hover:not(:disabled){background:#dce9e9}
+.attachment-upload-button{width:100%;min-height:36px;font-size:11px}
+.attachment-control-row{display:flex;align-items:center;gap:5px;margin-top:8px}
+.attachment-control-row input{min-width:0;width:100%;border:1px solid #dce5e6;border-radius:5px;padding:6px;font-size:10px;color:#35545a}
+.cover-page{overflow:hidden}
+.cover-copy{position:absolute;left:10%;top:36%;width:80%;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center}
+.cover-title,.cover-body{width:100%;border:0;border-radius:0;background:transparent;text-align:center;color:#172f34;outline:1px solid transparent;resize:none}
+.cover-title{font:700 clamp(16px,2.4vw,30px) Manrope,sans-serif;line-height:1.2;padding:4px}
+.cover-body{font:400 clamp(10px,1.25vw,15px) 'DM Sans',sans-serif;line-height:1.5;padding:4px}
+.cover-title:focus,.cover-body:focus{outline:1px dashed #9bb4b7;background:#ffffffa6}
+.attachment-page-card{width:min(100%,790px);margin:0 auto}
+.attachment-sheet{width:100%;aspect-ratio:816/1056;background:#fff;box-shadow:0 3px 15px #172f3416;padding:4% 4%;display:flex;flex-direction:column;overflow:hidden}
+.attachment-sheet h2{margin:0 0 2%;text-align:center;font:700 clamp(14px,2vw,22px) Manrope,sans-serif;color:#172f34}
+.attachment-grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(4,minmax(0,1fr));gap:1.2%}
+.attachment-tile{min-width:0;min-height:0;border:1px solid #e3e8e8;padding:4%;display:flex;flex-direction:column;align-items:center;justify-content:space-around;overflow:hidden}
+.attachment-tile input{width:100%;min-width:0;border:1px solid transparent;background:transparent;text-align:center;font:500 clamp(6px,.8vw,10px) 'DM Sans',sans-serif;color:#29474c;padding:2px;overflow-wrap:anywhere}
+.attachment-tile input:focus{outline:1px dashed #9bb4b7;background:#f7fbfb}
+.attachment-tile img{display:block;width:90%;height:auto;object-fit:contain}
+@media(max-width:640px){.cover-copy{top:34%;gap:10px}.attachment-sheet{padding:3%}.attachment-grid{gap:.6%}.attachment-tile{padding:2%}}

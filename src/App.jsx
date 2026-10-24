@@ -6,6 +6,7 @@ import { exportStampedPdf, previewPdf } from './lib/pdf.js';
 import { exportStampedDocx, previewDocx } from './lib/docx.js';
 
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
+const DEFAULT_COVER_BODY = 'This document and all its attachments are being stamped and secured on the Bitcoin blockchain. Kindly verify the integrity of the documents before use.';
 function fileKind(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith('.pdf') || file.type === 'application/pdf') return 'pdf';
@@ -41,23 +42,47 @@ function VerifyPage({ code }) {
   </div>;
 }
 
-function PageCard({ page, index, stamp }) {
+function PageCard({ page, index, stamp, coverTitle, setCoverTitle, coverBody, setCoverBody }) {
   const isPdf = Boolean(page.dataUrl);
   return <div className="page-card">
-    <div className="page-meta"><span>PAGE {String(index + 1).padStart(2, '0')}{page.cover ? ' · COVER' : ''}</span><span>{page.cover ? 'ORCAWARDEN STAMP PAGE' : isPdf ? 'PDF PREVIEW' : 'WORD PREVIEW'}</span></div>
     <div className="page-canvas">
-      {page.cover ? <div className="cover-page" style={{ aspectRatio: `${page.width || 816} / ${page.height || 1056}` }}>{stamp && <img className="cover-stamp" src={stamp.dataUrl} alt="OrcaWarden document stamp" draggable="false" />}</div> : isPdf ? <img className="pdf-page-image" src={page.dataUrl} alt={`Preview of page ${index + 1}`} /> : page.element}
+      {page.cover ? <div className="cover-page" style={{ aspectRatio: `${page.width || 816} / ${page.height || 1056}` }}>
+        <div className="cover-copy">
+          <input className="cover-title" aria-label="Cover heading" value={coverTitle} onChange={(event) => setCoverTitle(event.target.value)} />
+          <textarea className="cover-body" aria-label="Cover message" value={coverBody} onChange={(event) => setCoverBody(event.target.value)} rows={4} />
+        </div>
+        {stamp && <img className="cover-stamp" src={stamp.dataUrl} alt="OrcaWarden document stamp" draggable="false" />}
+      </div> : isPdf ? <img className="pdf-page-image" src={page.dataUrl} alt={`Preview of page ${index + 1}`} /> : page.element}
+    </div>
+  </div>;
+}
+
+function AttachmentGridPage({ attachments, index, onRename }) {
+  return <div className="page-card attachment-page-card">
+    <div className="attachment-sheet">
+      <h2>Attachments</h2>
+      <div className="attachment-grid">
+        {attachments.slice(index * 16, (index + 1) * 16).map((attachment) => <div className="attachment-tile" key={attachment.id}>
+          <input aria-label="Attachment file name" value={attachment.fileName} onChange={(event) => onRename(attachment.id, event.target.value)} />
+          {attachment.stamp && <img src={attachment.stamp.dataUrl} alt={`Stamp for ${attachment.fileName}`} />}
+        </div>)}
+      </div>
     </div>
   </div>;
 }
 
 function HomePage() {
   const inputRef = useRef(null);
+  const attachmentInputRef = useRef(null);
   const wordPreviewRef = useRef(null);
   const [file, setFile] = useState(null);
   const [kind, setKind] = useState(null);
   const [pages, setPages] = useState([]);
   const [stamp, setStamp] = useState(null);
+  const [attachments, setAttachments] = useState([]);
+  const [coverTitle, setCoverTitle] = useState('');
+  const [coverBody, setCoverBody] = useState(DEFAULT_COVER_BODY);
+  const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -124,8 +149,35 @@ function HomePage() {
     }
     setFile(candidate);
     setKind(detected);
+    setCoverTitle(candidate.name.replace(/\.[^.]+$/, ''));
+    setCoverBody(DEFAULT_COVER_BODY);
+    setAttachments([]);
     setPages([]);
     setProgress({ current: 0, total: 0 });
+  }
+
+  async function addAttachments(fileList) {
+    const selected = [...(fileList || [])];
+    if (!selected.length) return;
+    setAttachmentsBusy(true);
+    setError('');
+    try {
+      const prepared = await Promise.all(selected.map(async (attachmentFile) => {
+        const code = createDocumentCode();
+        const attachmentStamp = await createStamp(code);
+        return { id: crypto.randomUUID(), fileName: attachmentFile.name, stamp: attachmentStamp };
+      }));
+      setAttachments((current) => [...current, ...prepared]);
+    } catch (reason) {
+      setError(reason?.message || 'A stamp could not be created for one of the attachments.');
+    } finally {
+      setAttachmentsBusy(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+    }
+  }
+
+  function renameAttachment(id, fileName) {
+    setAttachments((current) => current.map((attachment) => attachment.id === id ? { ...attachment, fileName } : attachment));
   }
 
   async function createDownload() {
@@ -135,12 +187,12 @@ function HomePage() {
     setNotice('Preparing your stamped file…');
     try {
       if (kind === 'pdf') {
-        const bytes = await exportStampedPdf(file, stamp.dataUrl);
+        const bytes = await exportStampedPdf(file, stamp.dataUrl, coverTitle, coverBody, attachments);
         const output = new Blob([bytes], { type: 'application/pdf' });
         const name = file.name.replace(/\.pdf$/i, '') + '-orcawarden.pdf';
         downloadBlob(output, name);
       } else {
-        const output = await exportStampedDocx(file, stamp);
+        const output = await exportStampedDocx(file, stamp, coverTitle, coverBody, attachments);
         const name = file.name.replace(/\.docx$/i, '') + '-orcawarden.docx';
         downloadBlob(output, name);
       }
@@ -158,11 +210,16 @@ function HomePage() {
     setKind(null);
     setPages([]);
     setStamp(null);
+    setAttachments([]);
+    setCoverTitle('');
+    setCoverBody(DEFAULT_COVER_BODY);
     setError('');
     setNotice('');
     if (inputRef.current) inputRef.current.value = '';
     if (wordPreviewRef.current) wordPreviewRef.current.innerHTML = '';
   }
+
+  const totalPreviewPages = pages.length + (kind === 'docx' ? 1 : 0) + Math.ceil(attachments.length / 16);
 
   return <div className="app-shell">
     <main className="workspace">
@@ -176,21 +233,36 @@ function HomePage() {
       </section> : <section className="editor-layout">
         <aside className="control-rail">
           <div className="file-chip"><div className="file-icon"><FileText size={18} /></div><div className="file-name-wrap"><strong title={file.name}>{file.name}</strong><span>{kind === 'pdf' ? 'PDF DOCUMENT' : 'WORD DOCUMENT'} · {(file.size / (1024 * 1024)).toFixed(1)} MB</span></div><button className="icon-button" aria-label="Remove file" onClick={clearFile}><X size={16} /></button></div>
-          <div className="rail-section"><p className="section-kicker">STAMP PLACEMENT</p><h2>Cover page</h2><p className="control-copy">The stamp will sit at the bottom center, with a 5% margin.</p></div>
+          <div className="rail-section attachments-section">
+            <p className="section-kicker">ATTACHMENTS</p>
+            <button className="button button-secondary attachment-upload-button" disabled={attachmentsBusy} onClick={() => attachmentInputRef.current?.click()}>{attachmentsBusy ? 'Creating stamps…' : 'Add attachments'}</button>
+            <input ref={attachmentInputRef} className="sr-only" type="file" multiple onChange={(event) => addAttachments(event.target.files)} />
+            {attachments.map((attachment) => <div className="attachment-control-row" key={attachment.id}>
+              <input aria-label="Attachment file name" value={attachment.fileName} onChange={(event) => renameAttachment(attachment.id, event.target.value)} />
+              <button className="icon-button" aria-label={`Remove ${attachment.fileName}`} onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}><X size={14} /></button>
+            </div>)}
+          </div>
           <div className="rail-section stamp-data-section"><p className="section-kicker">DOCUMENT CODE</p>{stamp ? <><div className="number-display">{stamp.code}</div><p className="control-copy">All three codes link to this app with this number.</p><div className="code-types"><span>QR</span><span>DM</span><span>BARCODE</span></div></> : <p className="control-copy">Generating the stamp preview…</p>}</div>
           <div className="rail-bottom">
             {error && <div className="alert alert-error"><CircleAlert size={16} /><span>{error}</span></div>}
             {notice && !error && <div className="alert alert-success"><BadgeCheck size={16} /><span>{notice}</span></div>}
-            <button className="button button-primary download-button" disabled={!stamp || loading || busy || !pages.length} onClick={createDownload}>{busy ? <><span className="spinner" /> Creating file…</> : <><ArrowDownToLine size={17} /> Stamp &amp; download</>}</button>
+            <button className="button button-primary download-button" disabled={!stamp || loading || busy || attachmentsBusy || !pages.length} onClick={createDownload}>{busy ? <><span className="spinner" /> Creating file…</> : <><ArrowDownToLine size={17} /> Stamp &amp; download</>}</button>
             <p className="privacy-note"><LockKeyhole size={13} /> Your file never leaves this browser.</p>
           </div>
         </aside>
 
         <section className="preview-workspace">
-          <div className="preview-toolbar"><div><p className="section-kicker">DOCUMENT PREVIEW</p><h2>{loading ? 'Opening your file…' : pages.length ? `${pages.length + (kind === 'docx' ? 1 : 0)} ${pages.length + (kind === 'docx' ? 1 : 0) === 1 ? 'page' : 'pages'}` : 'Preparing preview'}</h2></div><div className="preview-legend"><span className="legend-dot" /> Cover-page stamp</div></div>
+          <div className="preview-toolbar"><div><p className="section-kicker">DOCUMENT PREVIEW</p><h2>{loading ? 'Opening your file…' : pages.length ? `${totalPreviewPages} ${totalPreviewPages === 1 ? 'page' : 'pages'}` : 'Preparing preview'}</h2></div></div>
           {loading && <div className="loading-card"><span className="spinner dark-spinner" /><div><strong>Preparing a local preview</strong><span>{kind === 'pdf' && progress.total ? `Rendering page ${progress.current} of ${progress.total}` : 'Reading document pages'}</span></div></div>}
-          {kind === 'pdf' && pages.length > 0 && <div className="pages-list">{pages.map((page, index) => <PageCard key={page.id} page={page} index={index} stamp={stamp} />)}</div>}
-          {kind === 'docx' && <div className="pages-list docx-pages-list"><PageCard page={{ cover: true, width: 816, height: 1056 }} index={0} stamp={stamp} /><div className="word-preview-host" ref={wordPreviewRef} /></div>}
+          {kind === 'pdf' && pages.length > 0 && <div className="pages-list">
+            {pages.map((page, index) => <PageCard key={page.id} page={page} index={index} stamp={stamp} coverTitle={coverTitle} setCoverTitle={setCoverTitle} coverBody={coverBody} setCoverBody={setCoverBody} />)}
+            {Array.from({ length: Math.ceil(attachments.length / 16) }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} />)}
+          </div>}
+          {kind === 'docx' && <div className="pages-list docx-pages-list">
+            <PageCard page={{ cover: true, width: 816, height: 1056 }} index={0} stamp={stamp} coverTitle={coverTitle} setCoverTitle={setCoverTitle} coverBody={coverBody} setCoverBody={setCoverBody} />
+            <div className="word-preview-host" ref={wordPreviewRef} />
+            {Array.from({ length: Math.ceil(attachments.length / 16) }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} />)}
+          </div>}
           <div className="preview-disclaimer"><Bitcoin size={14} /><span>The stamp text says “Secured on Bitcoin Blockchain.” This app does not submit or verify a Bitcoin transaction.</span></div>
         </section>
       </section>}

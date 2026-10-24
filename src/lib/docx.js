@@ -195,6 +195,57 @@ function cloneMediaName(zip) {
   return path;
 }
 
+function escapeXml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]);
+}
+
+function textParagraph(value, { centered = false, style = '', before = 0, after = 0 } = {}) {
+  const pPr = `${centered ? '<w:jc w:val="center"/>' : ''}${style ? `<w:pStyle w:val="${style}"/>` : ''}${before || after ? `<w:spacing w:before="${before}" w:after="${after}"/>` : ''}`;
+  return `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}<w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p>`;
+}
+
+function inlineStampDrawing(relId, widthEmu, heightEmu, docPrId) {
+  return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${widthEmu}" cy="${heightEmu}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${docPrId}" name="Attachment stamp ${docPrId}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="Attachment stamp"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+}
+
+function ensureDocumentNamespaces(xml) {
+  return xml.replace(/<w:document\b[^>]*>/, (tag) => Object.entries({ r: NS.officeRel, wp: NS.wp, a: NS.drawing, pic: NS.picture }).reduce((value, [prefix, uri]) => ensureNamespace(value, prefix, uri), tag));
+}
+
+async function attachmentAppendix(zip, attachments, documentRels, contentTypes, docPrCounter) {
+  const pages = [];
+  for (let start = 0; start < attachments.length; start += 16) {
+    const chunk = attachments.slice(start, start + 16);
+    let table = '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>' + '<w:gridCol w:w="2160"/>'.repeat(4) + '</w:tblGrid>';
+    for (let row = 0; row < 4; row += 1) {
+      table += '<w:tr>';
+      for (let col = 0; col < 4; col += 1) {
+        const item = chunk[row * 4 + col];
+        let cell = '<w:p/>';
+        if (item) {
+          const fileName = typeof item.fileName === 'string' ? item.fileName : '';
+          const imageData = item.stamp?.dataUrl || item.stampDataUrl || item.dataUrl;
+          if (!imageData) throw new Error(`Attachment “${fileName}” is missing its stamp image.`);
+          const imageName = cloneMediaName(zip).split('/').pop();
+          zip.file(`word/media/${imageName}`, decodeDataUrl(imageData));
+          const relId = nextRelationshipId(documentRels, 'rIdOrcaWardenAttachment');
+          documentRels = appendRelationship(documentRels, relId, `${NS.officeRel}/image`, `media/${imageName}`);
+          contentTypes = ensurePngContentType(contentTypes);
+          const aspect = item.stamp?.width && item.stamp?.height ? item.stamp.width / item.stamp.height : 480 / 143;
+          const width = 1.25 * 914400;
+          const height = Math.round(width / aspect);
+          cell = `${textParagraph(fileName, { centered: true })}<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${inlineStampDrawing(relId, width, height, docPrCounter.value++)}</w:p>`;
+        }
+        table += `<w:tc><w:tcPr><w:tcW w:w="2160" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${cell}</w:tc>`;
+      }
+      table += '</w:tr>';
+    }
+    table += '</w:tbl>';
+    pages.push(`${start ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : ''}${textParagraph('Attachments', { centered: true, style: 'Title' })}${table}`);
+  }
+  return { xml: pages.join(''), documentRels, contentTypes };
+}
+
 async function addStampToSection({ zip, sectionXml, sectionIndex, activeHeaderTypes, documentRels, contentTypes, imageName, stamp, stampAspect, position, pageSize, docPrCounter }) {
   let updatedSection = sectionXml;
   let nextDocumentRels = documentRels;
@@ -224,7 +275,7 @@ async function addStampToSection({ zip, sectionXml, sectionIndex, activeHeaderTy
   return { sectionXml: updatedSection, documentRels: nextDocumentRels, contentTypes: nextContentTypes };
 }
 
-export async function exportStampedDocx(file, stamp) {
+export async function exportStampedDocx(file, stamp, coverTitle = '', coverBody = '', attachments = []) {
   const zip = await JSZip.loadAsync(file);
   const mainPart = zip.file('word/document.xml');
   if (!mainPart) throw new Error('This Word document is missing its main document part.');
@@ -244,7 +295,8 @@ export async function exportStampedDocx(file, stamp) {
 
   const pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
   if (!/<w:body\b[^>]*>/.test(documentXml)) throw new Error('This Word document has an unsupported body structure.');
-  documentXml = documentXml.replace(/(<w:body\b[^>]*>)/, `$1${pageBreak}`);
+  const cover = `${coverTitle ? textParagraph(coverTitle, { centered: true, style: 'Title', before: 5200, after: 480 }) : ''}${coverBody ? textParagraph(coverBody, { centered: true }) : ''}${pageBreak}`;
+  documentXml = documentXml.replace(/(<w:body\b[^>]*>)/, `$1${cover}`);
   let firstSection = sections[0]?.[0] || '<w:sectPr></w:sectPr>';
   if (/^<w:sectPr\b[^>]*\/>$/.test(firstSection)) {
     firstSection = firstSection.replace(/^<w:sectPr\b([^>]*)\/>$/, '<w:sectPr$1></w:sectPr>');
@@ -277,6 +329,16 @@ export async function exportStampedDocx(file, stamp) {
     documentXml = documentXml.replace('</w:body>', `${updated.sectionXml}</w:body>`);
   }
 
+  if (attachments?.length) {
+    const appendix = await attachmentAppendix(zip, attachments, documentRels, contentTypes, docPrCounter);
+    documentRels = appendix.documentRels;
+    contentTypes = appendix.contentTypes;
+    documentXml = ensureDocumentNamespaces(documentXml);
+    const bodyClose = documentXml.lastIndexOf('</w:body>');
+    const trailingSectPr = documentXml.slice(0, bodyClose).match(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)\s*$/);
+    const insertAt = trailingSectPr ? trailingSectPr.index : bodyClose;
+    documentXml = `${documentXml.slice(0, insertAt)}${pageBreak}${appendix.xml}${documentXml.slice(insertAt)}`;
+  }
   zip.file('word/document.xml', documentXml);
   zip.file('word/_rels/document.xml.rels', documentRels);
   zip.file('[Content_Types].xml', contentTypes);
