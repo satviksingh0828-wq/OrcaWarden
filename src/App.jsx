@@ -41,7 +41,7 @@ function VerifyPage({ code }) {
       const result = await verifyOpenTimestamp(candidate, code);
       setState(result.matches ? (result.blockchainVerified ? 'confirmed' : 'pending') : 'invalid');
       setMessage(!result.matches
-        ? 'The uploaded document does not match the OpenTimestamps proof saved for this document number.'
+        ? 'The uploaded document does not match the OrcaWarden proof saved for this document number.'
         : result.blockchainVerified
           ? 'The uploaded document matches the OrcaWarden proof and the proof is confirmed in the Bitcoin blockchain.'
           : 'The uploaded document matches the OrcaWarden proof, but the proof is still waiting for Bitcoin blockchain confirmation.');
