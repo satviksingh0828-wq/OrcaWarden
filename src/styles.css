@@ -64,3 +64,35 @@ body{overflow:hidden}
 .attachment-tile input:focus{outline:none;background:transparent}
 .attachment-tile img{display:block;width:98%;height:auto;max-height:80%;object-fit:contain;flex:none}
 @media(max-width:640px){.cover-copy{top:34%;gap:10px}.attachment-sheet{padding:3%}.attachment-grid{gap:.6%}.attachment-tile{padding:2%}}
+
+/* Long documents must be allowed to flow through the page instead of being clipped by the viewport shell. */
+html,body,#root{min-height:100%;height:auto}
+body{overflow:auto}
+.app-shell{height:auto;min-height:100dvh;overflow:visible}
+.workspace{height:auto;min-height:100dvh}
+.editor-layout{height:auto;min-height:100dvh;overflow:visible}
+.preview-workspace{overflow:visible}
+.pages-list,.word-preview-host{max-height:none;overflow:visible}
+.control-rail{overflow:visible}
+.timestamp-progress{margin-top:12px;padding:10px;border:1px solid #dce8e8;border-radius:8px;background:#f6faf9;color:#547076;font-size:10px}
+.timestamp-progress-heading{display:flex;justify-content:space-between;gap:8px;color:#294e55;font-size:10px}
+.progress-track{height:6px;margin-top:8px;border-radius:99px;background:#dce8e8;overflow:hidden}
+.progress-track span{display:block;height:100%;border-radius:inherit;background:#2c7e78;transition:width .2s ease}
+.timestamp-progress p{margin:7px 0 0;color:#73868a;line-height:1.4}
+.verify-upload{margin-top:18px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.verify-config-note{margin-top:14px;font-size:11px}
+.verify-note-success{background:#edf8f2;border-color:#d5ebdf;color:var(--success)}
+.verify-note-error{background:#fff3f2;border-color:#f1d8d4;color:var(--danger)}
+@media(max-width:640px){
+  .editor-layout{min-height:0}
+  .control-rail{overflow:visible}
+  .timestamp-progress{font-size:9px}
+}
+
+.timestamp-modal-backdrop{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#092c3559;backdrop-filter:blur(2px)}
+.timestamp-modal{width:min(100%,420px);padding:24px;border-radius:14px;background:#fff;box-shadow:0 18px 55px #092c3540}
+.timestamp-modal-topline{display:flex;align-items:center;gap:9px;color:#668087}
+.timestamp-modal-topline .spinner{flex:none}
+.timestamp-modal h2{margin:12px 0 7px;font:800 20px Manrope,sans-serif;color:var(--ink);letter-spacing:-.4px}
+.timestamp-modal-copy{margin:0 0 19px;color:#718489;font-size:12px;line-height:1.55}
+.timestamp-modal-status{margin:8px 0 0;color:#718489;font-size:11px}

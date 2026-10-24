@@ -10,6 +10,8 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
+    "@lacrypta/typescript-opentimestamps": "^0.1.0",
+    "@supabase/supabase-js": "^2.118.0",
     "bwip-js": "^4.7.0",
     "docx-preview": "^0.3.6",
     "jszip": "^3.10.1",

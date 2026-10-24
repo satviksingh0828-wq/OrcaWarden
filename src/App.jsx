@@ -5,6 +5,7 @@ import { createDocumentCode, createStamp } from './lib/stamp.js';
 import { exportStampedPdf, previewPdf } from './lib/pdf.js';
 import { exportStampedDocx, previewDocx } from './lib/docx.js';
 import { attachmentGridSpec } from './lib/attachment-grid.js';
+import { fetchOpenTimestamp, isTimestampStorageConfigured, timestampAndSave, verifyOpenTimestamp } from './lib/ots.js';
 
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const DEFAULT_COVER_BODY = 'This document and all its attachments are being stamped and secured on the Bitcoin blockchain. Kindly verify the integrity of the documents before use.';
@@ -28,6 +29,27 @@ function downloadBlob(blob, name) {
 
 function VerifyPage({ code }) {
   const valid = /^\d{10}$/.test(code || '');
+  const [candidate, setCandidate] = useState(null);
+  const [state, setState] = useState('idle');
+  const [message, setMessage] = useState('');
+
+  async function verifyFile() {
+    if (!candidate || state === 'checking') return;
+    setState('checking');
+    setMessage('Fetching the matching .ots proof and checking the document hash…');
+    try {
+      const proof = await fetchOpenTimestamp(code);
+      const matches = await verifyOpenTimestamp(candidate, proof);
+      setState(matches ? 'valid' : 'invalid');
+      setMessage(matches
+        ? 'The uploaded document matches the OpenTimestamps proof saved for this document number.'
+        : 'The uploaded document does not match the OpenTimestamps proof saved for this document number.');
+    } catch (reason) {
+      setState('error');
+      setMessage(reason?.message || 'The proof could not be checked.');
+    }
+  }
+
   return <div className="app-shell">
     <main className="verify-shell">
       <div className="verify-card">
@@ -35,8 +57,11 @@ function VerifyPage({ code }) {
         <h1>{valid ? 'Code link opened' : 'Invalid document code'}</h1>
         {valid ? <>
           <div className="verify-number">{code}</div>
-          <p className="verify-copy">This stamp links to document number <strong>{code}</strong>. This app does not keep an issuance registry, upload the document, or record a Bitcoin transaction, so it cannot confirm that the document was issued here or independently verify blockchain settlement.</p>
-          <div className="verify-note">Compare this number with the source document and confirm it with its issuer.</div>
+          <p className="verify-copy">Upload the document copy you received. OrcaWarden will download the <strong>{code}.ots</strong> proof, hash your copy in this browser, and compare the hashes.</p>
+          <label className="verify-upload button button-secondary">{candidate ? candidate.name : 'Choose document copy'}<input className="sr-only" type="file" onChange={(event) => { setCandidate(event.target.files?.[0] || null); setState('idle'); setMessage(''); }} /></label>
+          <button className="button button-primary verify-button" disabled={!candidate || state === 'checking' || !isTimestampStorageConfigured()} onClick={verifyFile}>{state === 'checking' ? <><span className="spinner" /> Checking…</> : 'Verify document'}</button>
+          {!isTimestampStorageConfigured() && <p className="verify-copy verify-config-note">Verification storage is not configured on this deployment.</p>}
+          {message && <div className={`verify-note ${state === 'valid' ? 'verify-note-success' : state === 'invalid' || state === 'error' ? 'verify-note-error' : ''}`}>{message}</div>}
         </> : <p className="verify-copy">The link must contain one 10-digit document number.</p>}
       </div>
     </main>
@@ -89,6 +114,7 @@ function HomePage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [timestampProgress, setTimestampProgress] = useState({ current: 0, total: 0, label: '', status: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -169,6 +195,7 @@ function HomePage() {
     setAttachments([]);
     setPages([]);
     setProgress({ current: 0, total: 0 });
+    setTimestampProgress({ current: 0, total: 0, label: '', status: '' });
   }
 
   async function addAttachments(fileList) {
@@ -180,7 +207,7 @@ function HomePage() {
       const prepared = await Promise.all(selected.map(async (attachmentFile) => {
         const code = createDocumentCode();
         const attachmentStamp = await createStamp(code);
-        return { id: crypto.randomUUID(), fileName: attachmentFile.name, stamp: attachmentStamp };
+        return { id: crypto.randomUUID(), fileName: attachmentFile.name, sourceFile: attachmentFile, stamp: attachmentStamp };
       }));
       setAttachments((current) => [...current, ...prepared]);
     } catch (reason) {
@@ -197,21 +224,34 @@ function HomePage() {
 
   async function createDownload() {
     if (!file || !stamp || busy) return;
+    if (!isTimestampStorageConfigured()) {
+      setError('Timestamp storage is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild the app.');
+      return;
+    }
     setBusy(true);
     setError('');
     setNotice('Preparing your stamped file…');
     try {
+      let output;
+      let outputName;
       if (kind === 'pdf') {
         const bytes = await exportStampedPdf(file, stamp.dataUrl, coverTitle, coverBody, attachments);
-        const output = new Blob([bytes], { type: 'application/pdf' });
-        const name = file.name.replace(/\.pdf$/i, '') + '-orcawarden.pdf';
-        downloadBlob(output, name);
+        output = new Blob([bytes], { type: 'application/pdf' });
+        outputName = file.name.replace(/\.pdf$/i, '') + '-orcawarden.pdf';
       } else {
-        const output = await exportStampedDocx(file, stamp, coverTitle, coverBody, attachments);
-        const name = file.name.replace(/\.docx$/i, '') + '-orcawarden.docx';
-        downloadBlob(output, name);
+        output = await exportStampedDocx(file, stamp, coverTitle, coverBody, attachments);
+        outputName = file.name.replace(/\.docx$/i, '') + '-orcawarden.docx';
       }
-      setNotice(`Stamped copy downloaded. Document number: ${stamp.code}.`);
+      downloadBlob(output, outputName);
+      const jobs = [{ code: stamp.code, file: output, label: 'Main document' }, ...attachments.filter((item) => item.sourceFile).map((item) => ({ code: item.stamp.code, file: item.sourceFile, label: item.fileName }))];
+      setTimestampProgress({ current: 0, total: jobs.length, label: '', status: 'Starting OpenTimestamps…' });
+      for (let index = 0; index < jobs.length; index += 1) {
+        const job = jobs[index];
+        setTimestampProgress({ current: index, total: jobs.length, label: job.label, status: 'Hashing and submitting…' });
+        await timestampAndSave(job.code, job.file, (status) => setTimestampProgress({ current: index, total: jobs.length, label: job.label, status }));
+        setTimestampProgress({ current: index + 1, total: jobs.length, label: job.label, status: 'Saved' });
+      }
+      setNotice(`Stamped copy downloaded and ${jobs.length} OpenTimestamps proof${jobs.length === 1 ? '' : 's'} saved.`);
     } catch (reason) {
       setError(reason?.message || 'The stamped file could not be created. Try another document or position.');
       setNotice('');
@@ -230,6 +270,7 @@ function HomePage() {
     setCoverBody(DEFAULT_COVER_BODY);
     setError('');
     setNotice('');
+    setTimestampProgress({ current: 0, total: 0, label: '', status: '' });
     if (inputRef.current) inputRef.current.value = '';
     if (wordPreviewRef.current) wordPreviewRef.current.innerHTML = '';
   }
@@ -269,7 +310,8 @@ function HomePage() {
             {error && <div className="alert alert-error"><CircleAlert size={16} /><span>{error}</span></div>}
             {notice && !error && <div className="alert alert-success"><BadgeCheck size={16} /><span>{notice}</span></div>}
             <button className="button button-primary download-button" disabled={!stamp || loading || busy || attachmentsBusy || !pages.length} onClick={createDownload}>{busy ? <><span className="spinner" /> Creating file…</> : <><ArrowDownToLine size={17} /> Stamp &amp; download</>}</button>
-            <p className="privacy-note"><LockKeyhole size={13} /> Your file never leaves this browser.</p>
+            {timestampProgress.total > 0 && <div className="timestamp-progress" role="status"><div className="timestamp-progress-heading"><strong>OpenTimestamps</strong><span>{timestampProgress.current}/{timestampProgress.total}</span></div><div className="progress-track"><span style={{ width: `${timestampProgress.current / timestampProgress.total * 100}%` }} /></div><p>{timestampProgress.label ? `${timestampProgress.label}: ` : ''}{timestampProgress.status}</p></div>}
+            <p className="privacy-note"><LockKeyhole size={13} /> Your document is hashed locally; only its hash is sent to OpenTimestamps.</p>
           </div>
         </aside>
 
@@ -288,6 +330,7 @@ function HomePage() {
           <div className="preview-disclaimer"><Bitcoin size={14} /><span>The stamp text says “Secured on Bitcoin Blockchain.” This app does not submit or verify a Bitcoin transaction.</span></div>
         </section>
       </section>}
+      {busy && timestampProgress.total > 0 && <div className="timestamp-modal-backdrop" role="dialog" aria-live="polite" aria-label="OpenTimestamps progress"><div className="timestamp-modal"><div className="timestamp-modal-topline"><span className="spinner dark-spinner" /><p className="section-kicker">OPEN TIMESTAMPS</p></div><h2>Securing your documents</h2><p className="timestamp-modal-copy">Each document is hashed locally and submitted one at a time. Do not close this window until all proofs are saved.</p><div className="timestamp-progress-heading"><strong>{timestampProgress.label || 'Preparing documents'}</strong><span>{timestampProgress.current}/{timestampProgress.total}</span></div><div className="progress-track"><span style={{ width: `${timestampProgress.current / timestampProgress.total * 100}%` }} /></div><p className="timestamp-modal-status">{timestampProgress.status}</p></div></div>}
 
       {error && !file && <div className="alert alert-error upload-error"><CircleAlert size={16} /><span>{error}</span></div>}
     </main>
