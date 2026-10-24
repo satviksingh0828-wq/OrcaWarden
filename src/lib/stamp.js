@@ -1,47 +1,14 @@
 import QRCode from 'qrcode';
 import bwipjs from 'bwip-js/browser';
+import { getSupabaseClient } from './supabase.js';
 
-const USED_CODES_KEY = 'orcawarden:recent-document-codes:v1';
-const LOW = 1_000_000_000n;
-const RANGE = 9_000_000_000n;
-const UINT64_RANGE = 1n << 64n;
-
-function readLocalCodes() {
-  try {
-    const value = JSON.parse(localStorage.getItem(USED_CODES_KEY) || '[]');
-    return new Set(Array.isArray(value) ? value.filter((item) => /^\d{10}$/.test(item)) : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function randomTenDigitCode() {
-  const bytes = new Uint8Array(8);
-  const limit = UINT64_RANGE - (UINT64_RANGE % RANGE);
-  let value;
-  do {
-    crypto.getRandomValues(bytes);
-    value = 0n;
-    for (const byte of bytes) value = (value << 8n) | BigInt(byte);
-  } while (value >= limit);
-  return String(LOW + (value % RANGE));
-}
-
-export function createDocumentCode() {
-  const recent = readLocalCodes();
-  let code;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    code = randomTenDigitCode();
-    if (!recent.has(code)) break;
-    code = undefined;
-  }
-  if (!code) throw new Error('Could not create a fresh document number. Please try again.');
-  recent.add(code);
-  try {
-    localStorage.setItem(USED_CODES_KEY, JSON.stringify([...recent].slice(-5000)));
-  } catch {
-    // The code remains valid if browser storage is unavailable; only local collision history is lost.
-  }
+export async function createDocumentCode() {
+  const supabase = getSupabaseClient();
+  if (!supabase) throw new Error('Supabase is required to reserve a globally unique document number.');
+  const { data, error } = await supabase.rpc('reserve_orcawarden_document_number');
+  if (error) throw new Error(`Could not reserve a unique document number: ${error.message}`);
+  const code = String(data || '');
+  if (!/^\d{10}$/.test(code)) throw new Error('Supabase returned an invalid document number.');
   return code;
 }
 

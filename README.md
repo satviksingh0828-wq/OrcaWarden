@@ -29,7 +29,9 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 VITE_SUPABASE_OTS_BUCKET=orcawarden-ots
 ```
 
-The bucket stores proof files only, not uploaded documents. The public read policy is needed because the verification page has no sign-in flow; each proof contains OpenTimestamps proof data rather than document contents. OpenTimestamps calendar servers receive only local hashes and do not require an API key.
+The bucket stores encrypted proof files only, not uploaded documents. The public read policy is needed because the verification page has no sign-in flow; each proof contains OpenTimestamps proof data rather than document contents. OpenTimestamps calendar servers receive only local hashes and do not require an API key.
+
+Set `VITE_ORCAWARDEN_ENCRYPTION_KEY` to a permanent value of at least 8 characters. Keep it unchanged for the full deployment lifecycle: changing or losing it makes existing encrypted proofs unreadable. The frontend refuses to stamp or verify if the key is missing or too short. Because this is a Vite `VITE_` variable, it is delivered to the browser; it protects proof data at rest in Storage, but it is not a server-only secret. A server-side secret would require moving encryption into an authenticated backend or Supabase Edge Function.
 
 ## Deploy on Render
 
@@ -45,6 +47,6 @@ The Blueprint runs `npm ci && npm run build`, publishes `dist`, and rewrites cli
 
 ## Document number and verification limits
 
-The 10-digit number is generated with the browser's cryptographic random-number generator. The current browser stores a limited history to avoid reusing a recently generated number on that same browser. Because the app has no issuance table or shared number registry, it cannot guarantee global uniqueness across different devices or users. Opening `/verify/<code>` lets a user upload a copy; the app fetches `<code>.ots` from Supabase and compares the copy's local SHA-256 hash with the proof's file hash.
+The 10-digit number is reserved by the Supabase `orcawarden_document_number_seq` sequence through the `reserve_orcawarden_document_number()` RPC. This makes number allocation globally unique across concurrent browsers until the ten-digit sequence is exhausted. Opening `/verify/<code>` lets a user upload a copy; the app fetches and decrypts `<code>.ots` in the browser, then compares the copy's local SHA-256 hash with the proof's file hash.
 
 The stamp wording includes “Secured on Bitcoin Blockchain” as requested. This app does not submit a transaction, anchor a document hash, or independently verify blockchain settlement. Do not treat the stamp alone as proof of a Bitcoin transaction or document authenticity.

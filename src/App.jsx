@@ -5,7 +5,7 @@ import { createDocumentCode, createStamp } from './lib/stamp.js';
 import { exportStampedPdf, previewPdf } from './lib/pdf.js';
 import { exportStampedDocx, previewDocx } from './lib/docx.js';
 import { attachmentGridSpec } from './lib/attachment-grid.js';
-import { fetchOpenTimestamp, isTimestampStorageConfigured, timestampAndSave, verifyOpenTimestamp } from './lib/ots.js';
+import { fetchOpenTimestamp, getTimestampStorageConfigurationError, isTimestampStorageConfigured, timestampAndSave, verifyOpenTimestamp } from './lib/ots.js';
 
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const DEFAULT_COVER_BODY = 'This document and all its attachments are being stamped and secured on the Bitcoin blockchain. Kindly verify the integrity of the documents before use.';
@@ -60,7 +60,7 @@ function VerifyPage({ code }) {
           <p className="verify-copy">Upload the document copy you received. OrcaWarden will download the <strong>{code}.ots</strong> proof, hash your copy in this browser, and compare the hashes.</p>
           <label className="verify-upload button button-secondary">{candidate ? candidate.name : 'Choose document copy'}<input className="sr-only" type="file" onChange={(event) => { setCandidate(event.target.files?.[0] || null); setState('idle'); setMessage(''); }} /></label>
           <button className="button button-primary verify-button" disabled={!candidate || state === 'checking' || !isTimestampStorageConfigured()} onClick={verifyFile}>{state === 'checking' ? <><span className="spinner" /> Checking…</> : 'Verify document'}</button>
-          {!isTimestampStorageConfigured() && <p className="verify-copy verify-config-note">Verification storage is not configured on this deployment.</p>}
+          {!isTimestampStorageConfigured() && <p className="verify-copy verify-config-note">{getTimestampStorageConfigurationError()}</p>}
           {message && <div className={`verify-note ${state === 'valid' ? 'verify-note-success' : state === 'invalid' || state === 'error' ? 'verify-note-error' : ''}`}>{message}</div>}
         </> : <p className="verify-copy">The link must contain one 10-digit document number.</p>}
       </div>
@@ -129,7 +129,7 @@ function HomePage() {
       setError('');
       setNotice('');
       try {
-        const code = createDocumentCode();
+        const code = await createDocumentCode();
         const newStamp = await createStamp(code);
         if (cancelled) return;
         setStamp(newStamp);
@@ -205,7 +205,7 @@ function HomePage() {
     setError('');
     try {
       const prepared = await Promise.all(selected.map(async (attachmentFile) => {
-        const code = createDocumentCode();
+        const code = await createDocumentCode();
         const attachmentStamp = await createStamp(code);
         return { id: crypto.randomUUID(), fileName: attachmentFile.name, sourceFile: attachmentFile, stamp: attachmentStamp };
       }));
@@ -225,7 +225,7 @@ function HomePage() {
   async function createDownload() {
     if (!file || !stamp || busy) return;
     if (!isTimestampStorageConfigured()) {
-      setError('Timestamp storage is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild the app.');
+      setError(`${getTimestampStorageConfigurationError()} Add the required environment variables, then rebuild the app.`);
       return;
     }
     setBusy(true);

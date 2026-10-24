@@ -1,4 +1,5 @@
 -- OpenTimestamps proofs contain only document hashes and are safe to serve publicly.
+-- The bytes stored in this bucket are encrypted by the app with AES-GCM.
 -- Run this once in Supabase Dashboard > SQL Editor.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -7,7 +8,7 @@ values (
   'orcawarden-ots',
   true,
   1048576,
-  array['application/vnd.opentimestamps.ots', 'application/octet-stream']
+  array['application/octet-stream', 'application/vnd.opentimestamps.ots']
 )
 on conflict (id) do update set
   name = excluded.name,
@@ -39,3 +40,25 @@ create policy "OrcaWarden can replace timestamp proofs"
     bucket_id = 'orcawarden-ots'
     and name ~ '^[0-9]{10}\\.ots$'
   );
+
+-- Reserve document numbers centrally so concurrent browsers cannot generate duplicates.
+create sequence if not exists public.orcawarden_document_number_seq
+  as bigint
+  minvalue 1000000000
+  maxvalue 9999999999
+  start with 1000000000
+  increment by 1
+  no cycle;
+
+create or replace function public.reserve_orcawarden_document_number()
+returns text
+language sql
+security definer
+set search_path = public
+as $$
+  select lpad(nextval('public.orcawarden_document_number_seq')::text, 10, '0');
+$$;
+
+revoke all on function public.reserve_orcawarden_document_number() from public;
+grant execute on function public.reserve_orcawarden_document_number() to anon, authenticated;
+revoke all on sequence public.orcawarden_document_number_seq from public;
