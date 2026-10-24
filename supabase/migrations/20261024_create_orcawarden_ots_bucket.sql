@@ -1,12 +1,11 @@
--- OpenTimestamps proofs contain only document hashes and are safe to serve publicly.
--- The bytes stored in this bucket are encrypted by the app with AES-GCM.
+-- The bytes stored in this private bucket are encrypted by the Render server with AES-GCM.
 -- Run this once in Supabase Dashboard > SQL Editor.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'orcawarden-ots',
   'orcawarden-ots',
-  true,
+  false,
   1048576,
   array['application/octet-stream', 'application/vnd.opentimestamps.ots']
 )
@@ -16,30 +15,7 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
-drop policy if exists "OrcaWarden can upload timestamp proofs" on storage.objects;
-create policy "OrcaWarden can upload timestamp proofs"
-  on storage.objects for insert
-  to anon, authenticated
-  with check (
-    bucket_id = 'orcawarden-ots'
-    and name ~ '^[0-9]{10}\\.ots$'
-  );
-
-drop policy if exists "Anyone can read timestamp proofs" on storage.objects;
-create policy "Anyone can read timestamp proofs"
-  on storage.objects for select
-  to anon, authenticated
-  using (bucket_id = 'orcawarden-ots');
-
-drop policy if exists "OrcaWarden can replace timestamp proofs" on storage.objects;
-create policy "OrcaWarden can replace timestamp proofs"
-  on storage.objects for update
-  to anon, authenticated
-  using (bucket_id = 'orcawarden-ots')
-  with check (
-    bucket_id = 'orcawarden-ots'
-    and name ~ '^[0-9]{10}\\.ots$'
-  );
+-- No anonymous Storage policies are created. The Render service uses the Supabase service-role key.
 
 -- Reserve document numbers centrally so concurrent browsers cannot generate duplicates.
 create sequence if not exists public.orcawarden_document_number_seq

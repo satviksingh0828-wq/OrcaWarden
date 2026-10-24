@@ -21,29 +21,30 @@ Open the local Vite URL shown in the terminal. The app allows files up to 40 MB.
 
 ## Supabase and OpenTimestamps setup
 
-Create a Supabase project, run [`supabase/migrations/20261024_create_orcawarden_ots_bucket.sql`](supabase/migrations/20261024_create_orcawarden_ots_bucket.sql) in the SQL Editor, and configure the variables in [`.env.example`](.env.example):
+Create a Supabase project, run [`supabase/migrations/20261024_create_orcawarden_ots_bucket.sql`](supabase/migrations/20261024_create_orcawarden_ots_bucket.sql) in the SQL Editor, and configure these **private Render server variables** from [`.env.example`](.env.example):
 
 ```bash
-VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-VITE_SUPABASE_OTS_BUCKET=orcawarden-ots
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+SUPABASE_OTS_BUCKET=orcawarden-ots
+ORCAWARDEN_ENCRYPTION_KEY=replace-with-a-permanent-strong-server-key
 ```
 
-The bucket stores encrypted proof files only, not uploaded documents. The public read policy is needed because the verification page has no sign-in flow; each proof contains OpenTimestamps proof data rather than document contents. OpenTimestamps calendar servers receive only local hashes and do not require an API key.
+The bucket is private and stores encrypted proof files only, not uploaded documents. The Render server uses the Supabase service-role key to access it. The browser hashes documents locally and sends only SHA-256 digests to the Render API. OpenTimestamps calendar servers receive only those hashes and do not require an API key.
 
-Set `VITE_ORCAWARDEN_ENCRYPTION_KEY` to a permanent value of at least 8 characters. Keep it unchanged for the full deployment lifecycle: changing or losing it makes existing encrypted proofs unreadable. The frontend refuses to stamp or verify if the key is missing or too short. Because this is a Vite `VITE_` variable, it is delivered to the browser; it protects proof data at rest in Storage, but it is not a server-only secret. A server-side secret would require moving encryption into an authenticated backend or Supabase Edge Function.
+Set `ORCAWARDEN_ENCRYPTION_KEY` to a permanent server-only value of at least 8 characters. Keep it unchanged for the full deployment lifecycle: changing or losing it makes existing encrypted proofs unreadable. The server derives an AES-256-GCM key with scrypt; the key is never sent to the browser. The health endpoint is `GET /health` and returns HTTP 200 only when Supabase and the encryption key are configured.
 
 ## Deploy on Render
 
-This repository includes `render.yaml` and is configured as a Render Static Site. Add the three `VITE_` variables above to the Render service before building. Render's [Static Sites guide](https://render.com/docs/static-sites) describes connecting a Git repository and deploying from the dashboard; the [Blueprint reference](https://render.com/docs/blueprint-spec) documents the YAML configuration. Render documents Static Sites as free to deploy, subject to workspace usage limits.
+This repository includes `render.yaml` and is configured as a Render Node web service. Add the four private variables above to the Render service before deploying. Render uses `npm ci && npm run build`, starts the app with `npm start`, and checks `/health`.
 
 1. Commit and push the application to the `main` branch of `satviksingh0828-wq/OrcaWarden`.
 2. Sign in to Render and choose **New → Blueprint**.
 3. Connect your GitHub account if asked, then select `satviksingh0828-wq/OrcaWarden` and its `main` branch.
-4. Render reads `render.yaml`. Review the proposed static site named `orcawarden-stamper`, then select **Apply**.
+4. Render reads `render.yaml`. Review the proposed web service named `orcawarden-stamper`, then select **Apply**.
 5. Wait for the build and deploy to finish. Open the `onrender.com` URL Render assigns to the site.
 
-The Blueprint runs `npm ci && npm run build`, publishes `dist`, and rewrites client-side paths to `index.html`, so `/verify/<code>` links open the app correctly. Later pushes to the connected branch can trigger automatic deploys. Render's [redirects and rewrites guide](https://render.com/docs/redirects-rewrites) explains the SPA route behavior.
+The Node server serves `dist`, handles `/api/*`, and falls back to `index.html` so `/verify/<code>` links open correctly. Later pushes to the connected branch can trigger automatic deploys.
 
 ## Document number and verification limits
 

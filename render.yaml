@@ -1,10 +1,16 @@
 services:
   - type: web
     name: orcawarden-stamper
-    runtime: static
+    runtime: node
     buildCommand: npm ci && npm run build
-    staticPublishPath: ./dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_OTS_BUCKET
+        value: orcawarden-ots
+      - key: ORCAWARDEN_ENCRYPTION_KEY
+        sync: false

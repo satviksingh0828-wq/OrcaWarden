@@ -5,7 +5,7 @@ import { createDocumentCode, createStamp } from './lib/stamp.js';
 import { exportStampedPdf, previewPdf } from './lib/pdf.js';
 import { exportStampedDocx, previewDocx } from './lib/docx.js';
 import { attachmentGridSpec } from './lib/attachment-grid.js';
-import { fetchOpenTimestamp, getTimestampStorageConfigurationError, isTimestampStorageConfigured, timestampAndSave, verifyOpenTimestamp } from './lib/ots.js';
+import { getTimestampStorageConfigurationError, isTimestampStorageConfigured, timestampAndSave, verifyOpenTimestamp } from './lib/ots.js';
 
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const DEFAULT_COVER_BODY = 'This document and all its attachments are being stamped and secured on the Bitcoin blockchain. Kindly verify the integrity of the documents before use.';
@@ -38,8 +38,7 @@ function VerifyPage({ code }) {
     setState('checking');
     setMessage('Fetching the matching .ots proof and checking the document hash…');
     try {
-      const proof = await fetchOpenTimestamp(code);
-      const matches = await verifyOpenTimestamp(candidate, proof);
+      const matches = await verifyOpenTimestamp(candidate, code);
       setState(matches ? 'valid' : 'invalid');
       setMessage(matches
         ? 'The uploaded document matches the OpenTimestamps proof saved for this document number.'

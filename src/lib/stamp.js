@@ -1,13 +1,11 @@
 import QRCode from 'qrcode';
 import bwipjs from 'bwip-js/browser';
-import { getSupabaseClient } from './supabase.js';
 
 export async function createDocumentCode() {
-  const supabase = getSupabaseClient();
-  if (!supabase) throw new Error('Supabase is required to reserve a globally unique document number.');
-  const { data, error } = await supabase.rpc('reserve_orcawarden_document_number');
-  if (error) throw new Error(`Could not reserve a unique document number: ${error.message}`);
-  const code = String(data || '');
+  const response = await fetch('/api/reserve-number', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Could not reserve a globally unique document number.');
+  const code = String(payload.code || '');
   if (!/^\d{10}$/.test(code)) throw new Error('Supabase returned an invalid document number.');
   return code;
 }
