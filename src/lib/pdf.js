@@ -65,8 +65,8 @@ function drawAttachmentGridPage(page, attachments, offset, images, font, boldFon
   const top = height * 0.86;
   const cellWidth = gridWidth / columns;
   const cellHeight = gridHeight / rows;
-  drawCenteredLines(page, ['Attachments Stamps'], boldFont, Math.min(22, width * 0.04), height * 0.95, 24);
-  drawCenteredLines(page, ['Kindly verify all attachments against their respective stamps only.'], font, Math.min(10, width * 0.018), height * 0.91, 12);
+  drawCenteredLines(page, ['Attachments Stamps'], boldFont, Math.min(16.5, width * 0.03), height * 0.95, 20);
+  drawCenteredLines(page, ['Kindly verify all attachments against their respective stamps only.'], font, Math.min(8.5, width * 0.015), height * 0.91, 10);
   attachments.slice(offset, offset + capacity).forEach((attachment, index) => {
     const column = index % columns;
     const row = Math.floor(index / columns);
@@ -74,8 +74,8 @@ function drawAttachmentGridPage(page, attachments, offset, images, font, boldFon
     const cellTop = top - row * cellHeight;
     const image = images.get(attachment.id);
     if (!image) return;
-    const maxWidth = cellWidth * 0.92;
-    const maxHeight = cellHeight * 0.84;
+    const maxWidth = cellWidth * 0.98;
+    const maxHeight = cellHeight * 0.80;
     const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
     const drawWidth = image.width * scale;
     const drawHeight = image.height * scale;
@@ -86,12 +86,16 @@ function drawAttachmentGridPage(page, attachments, offset, images, font, boldFon
       width: drawWidth,
       height: drawHeight,
     });
-    const name = pdfText(attachment.fileName || 'Attachment');
-    const nameLines = wrapText(name, font, 8, cellWidth * 0.90).slice(0, 3);
-    nameLines.forEach((line, lineIndex) => {
-      const lineWidth = font.widthOfTextAtSize(line, 8);
-      page.drawText(line, { x: cellLeft + (cellWidth - lineWidth) / 2, y: imageY - 2 - lineIndex * 9, size: 8, font });
-    });
+    const originalName = pdfText(attachment.fileName || 'Attachment');
+    const maxNameWidth = cellWidth * 0.94;
+    let name = originalName;
+    while (name.length && font.widthOfTextAtSize(name, 8) > maxNameWidth) name = name.slice(0, -1);
+    if (name !== originalName) {
+      while (name.length && font.widthOfTextAtSize(`${name}...`, 8) > maxNameWidth) name = name.slice(0, -1);
+      name = `${name}...`;
+    }
+    const lineWidth = font.widthOfTextAtSize(name, 8);
+    page.drawText(name, { x: cellLeft + (cellWidth - lineWidth) / 2, y: imageY - 10, size: 8, font });
   });
 }
 
@@ -105,10 +109,12 @@ export async function exportStampedPdf(file, stampDataUrl, coverTitle, coverBody
   const regularFont = await document.embedFont(StandardFonts.Helvetica);
   const boldFont = await document.embedFont(StandardFonts.HelveticaBold);
   const cover = document.insertPage(0, [width, height]);
-  const titleLines = wrapText(coverTitle || file.name.replace(/\.[^.]+$/, ''), boldFont, Math.min(30, width * 0.055), width * 0.78).slice(0, 3);
-  drawCenteredLines(cover, titleLines, boldFont, Math.min(30, width * 0.055), height * 0.64, Math.min(36, width * 0.065));
-  const bodyLines = wrapText(coverBody, regularFont, Math.min(15, width * 0.028), width * 0.72).slice(0, 6);
-  drawCenteredLines(cover, bodyLines, regularFont, Math.min(15, width * 0.028), height * 0.52, Math.min(21, width * 0.038));
+  const titleSize = Math.min(22.5, width * 0.0367);
+  const bodySize = Math.min(11.25, width * 0.0184);
+  const titleLines = wrapText(coverTitle || file.name.replace(/\.[^.]+$/, ''), boldFont, titleSize, width * 0.80).slice(0, 3);
+  drawCenteredLines(cover, titleLines, boldFont, titleSize, height * 0.64, titleSize * 1.2);
+  const bodyLines = wrapText(coverBody, regularFont, bodySize, width * 0.80).slice(0, 6);
+  drawCenteredLines(cover, bodyLines, regularFont, bodySize, height * 0.58, bodySize * 1.5);
   const stampWidth = width * 0.44;
   const stampHeight = stampWidth * (stampImage.height / stampImage.width);
   cover.drawImage(stampImage, {

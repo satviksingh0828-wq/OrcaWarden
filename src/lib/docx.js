@@ -12,12 +12,32 @@ const NS = {
 };
 
 export async function previewDocx(file, container) {
+  container._orcaResizeObserver?.disconnect();
   container.innerHTML = '';
   await renderAsync(file, container, container, {
     className: 'docx', inWrapper: true, breakPages: true,
-    ignoreLastRenderedPageBreak: false, renderHeaders: true, renderFooters: true,
+    ignoreLastRenderedPageBreak: true, renderHeaders: true, renderFooters: true,
   });
-  return [...container.querySelectorAll('.docx-wrapper section.docx, section.docx')];
+  const pages = getPageElements(container);
+  const wrapper = container.querySelector('.docx-wrapper');
+  const fitToWidth = () => {
+    const pageWidth = Math.max(816, ...pages.map((page) => {
+      if (!page.dataset.owBaseWidth) page.dataset.owBaseWidth = String(page.offsetWidth || 816);
+      return Number(page.dataset.owBaseWidth) || 816;
+    }));
+    const availableWidth = container.clientWidth;
+    const scale = availableWidth > 0 ? Math.min(1, availableWidth / pageWidth) : 1;
+    if (wrapper) {
+      wrapper.style.zoom = String(scale);
+      wrapper.style.width = `${100 / scale}%`;
+    }
+  };
+  fitToWidth();
+  if (typeof ResizeObserver !== 'undefined') {
+    container._orcaResizeObserver = new ResizeObserver(fitToWidth);
+    container._orcaResizeObserver.observe(container);
+  }
+  return pages;
 }
 
 function getPageElements(container) {
@@ -200,9 +220,16 @@ function escapeXml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]);
 }
 
-function textParagraph(value, { centered = false, style = '', before = 0, after = 0, pageBreakBefore = false } = {}) {
+function textParagraph(value, { centered = false, style = '', before = 0, after = 0, pageBreakBefore = false, fontSize = 11, bold = false } = {}) {
   const pPr = `${centered ? '<w:jc w:val="center"/>' : ''}${style ? `<w:pStyle w:val="${style}"/>` : ''}${before || after ? `<w:spacing w:before="${before}" w:after="${after}"/>` : ''}${pageBreakBefore ? '<w:pageBreakBefore/>' : ''}`;
-  return `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}<w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p>`;
+  const runProperties = `<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="${Math.round(fontSize * 2)}"/><w:szCs w:val="${Math.round(fontSize * 2)}"/>${bold ? '<w:b/>' : ''}</w:rPr>`;
+  return `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : ''}<w:r>${runProperties}<w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r></w:p>`;
+}
+
+function fitFilename(value, widthTwips) {
+  const maxChars = Math.max(8, Math.floor(widthTwips / 80));
+  const name = String(value || 'Attachment');
+  return name.length > maxChars ? `${name.slice(0, maxChars - 3)}...` : name;
 }
 
 function inlineStampDrawing(relId, widthEmu, heightEmu, docPrId) {
@@ -218,7 +245,8 @@ async function attachmentAppendix(zip, attachments, documentRels, contentTypes, 
   const tableWidth = Math.max(1, pageWidth - pageMargins.left - pageMargins.right);
   const layout = attachmentGridSpec(pageWidth, pageHeight, tableWidth, pageHeight - pageMargins.top - pageMargins.bottom - 1900);
   const cellWidth = Math.floor(tableWidth / layout.columns);
-  const imageWidth = Math.floor(cellWidth * 635 * 0.92);
+  const maxImageWidth = Math.floor(cellWidth * 635 * 0.98);
+  const maxImageHeight = Math.floor(layout.cellHeight * 635 * 0.80);
   const rowHeight = Math.floor(layout.cellHeight);
   for (let start = 0; start < attachments.length; start += layout.capacity) {
     const chunk = attachments.slice(start, start + layout.capacity);
@@ -239,16 +267,18 @@ async function attachmentAppendix(zip, attachments, documentRels, contentTypes, 
           documentRels = appendRelationship(documentRels, relId, `${NS.officeRel}/image`, `media/${imageName}`);
           contentTypes = ensurePngContentType(contentTypes);
           const aspect = item.stamp?.width && item.stamp?.height ? item.stamp.width / item.stamp.height : 480 / 143;
-          const width = imageWidth;
+          const width = Math.min(maxImageWidth, Math.floor(maxImageHeight * aspect));
           const height = Math.round(width / aspect);
-          cell = `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr>${inlineStampDrawing(relId, width, height, docPrCounter.value++)}</w:p><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(fileName)}</w:t></w:r></w:p>`;
+          const label = fitFilename(fileName, cellWidth);
+          const labelRun = `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">${escapeXml(label)}</w:t></w:r>`;
+          cell = `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr>${inlineStampDrawing(relId, width, height, docPrCounter.value++)}</w:p><w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0"/></w:pPr>${labelRun}</w:p>`;
         }
         table += `<w:tc><w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>${cell}</w:tc>`;
       }
       table += '</w:tr>';
     }
     table += '</w:tbl>';
-    pages.push(`${textParagraph('Attachments Stamps', { centered: true, style: 'Title', pageBreakBefore: true })}${textParagraph('Kindly verify all attachments against their respective stamps only.', { centered: true })}${table}`);
+    pages.push(`${textParagraph('Attachments Stamps', { centered: true, pageBreakBefore: true, fontSize: 16, bold: true, after: 80 })}${textParagraph('Kindly verify all attachments against their respective stamps only.', { centered: true, fontSize: 8, after: 160 })}${table}`);
   }
   return { xml: pages.join(''), documentRels, contentTypes };
 }
@@ -302,7 +332,7 @@ export async function exportStampedDocx(file, stamp, coverTitle = '', coverBody 
 
   const pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
   if (!/<w:body\b[^>]*>/.test(documentXml)) throw new Error('This Word document has an unsupported body structure.');
-  const cover = `${coverTitle ? textParagraph(coverTitle, { centered: true, style: 'Title', before: 5200, after: 480 }) : ''}${coverBody ? textParagraph(coverBody, { centered: true }) : ''}${pageBreak}`;
+  const cover = `${coverTitle ? textParagraph(coverTitle, { centered: true, before: 5200, after: 240, fontSize: 22, bold: true }) : ''}${coverBody ? textParagraph(coverBody, { centered: true, fontSize: 11 }) : ''}${pageBreak}`;
   documentXml = documentXml.replace(/(<w:body\b[^>]*>)/, `$1${cover}`);
   let firstSection = sections[0]?.[0] || '<w:sectPr></w:sectPr>';
   if (/^<w:sectPr\b[^>]*\/>$/.test(firstSection)) {
@@ -337,7 +367,7 @@ export async function exportStampedDocx(file, stamp, coverTitle = '', coverBody 
   }
 
   if (attachments?.length) {
-    const appendixSection = sections.at(-1)?.[0] || firstSection;
+    const appendixSection = sections[0]?.[0] || firstSection;
     const pgSz = appendixSection.match(/<w:pgSz\b[^>]*\/>/)?.[0] || '';
     const pgMar = appendixSection.match(/<w:pgMar\b[^>]*\/>/)?.[0] || '';
     const appendix = await attachmentAppendix(
@@ -355,8 +385,9 @@ export async function exportStampedDocx(file, stamp, coverTitle = '', coverBody 
     contentTypes = appendix.contentTypes;
     documentXml = ensureDocumentNamespaces(documentXml);
     const bodyClose = documentXml.lastIndexOf('</w:body>');
-    const trailingSectPr = documentXml.slice(0, bodyClose).match(/<w:sectPr\b[^>]*(?:\/>|>[\s\S]*?<\/w:sectPr>)\s*$/);
-    const insertAt = trailingSectPr ? trailingSectPr.index : bodyClose;
+    const bodyOpen = documentXml.indexOf('<w:body');
+    const finalSectionProperties = documentXml.lastIndexOf('<w:sectPr', bodyClose);
+    const insertAt = finalSectionProperties > bodyOpen ? finalSectionProperties : bodyClose;
     documentXml = `${documentXml.slice(0, insertAt)}${appendix.xml}${documentXml.slice(insertAt)}`;
   }
   zip.file('word/document.xml', documentXml);

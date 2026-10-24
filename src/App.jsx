@@ -158,17 +158,13 @@ function HomePage() {
           if (cancelled) return;
           const pageNodes = [...container.querySelectorAll('.docx-wrapper section.docx, section.docx')];
           if (!pageNodes.length) throw new Error('No pages were found in this Word file. Try saving it as a .docx document and upload it again.');
-          const appendixPageNode = pageNodes.at(-1);
-          const pageRect = appendixPageNode.getBoundingClientRect();
-          const pageStyle = window.getComputedStyle(appendixPageNode);
+          const documentPageNode = pageNodes[0];
+          const pageStyle = window.getComputedStyle(documentPageNode);
           const horizontalPadding = parseFloat(pageStyle.paddingLeft || '0') + parseFloat(pageStyle.paddingRight || '0');
           const verticalPadding = parseFloat(pageStyle.paddingTop || '0') + parseFloat(pageStyle.paddingBottom || '0');
-          if (pageRect.width && pageRect.height) setAttachmentPageSize({
-            width: pageRect.width,
-            height: pageRect.height,
-            contentWidth: pageRect.width - horizontalPadding,
-            contentHeight: pageRect.height - verticalPadding,
-          });
+          const pageWidth = parseFloat(pageStyle.width) || documentPageNode.offsetWidth || 816;
+          const pageHeight = parseFloat(pageStyle.height) || documentPageNode.offsetHeight || 1056;
+          setAttachmentPageSize({ width: pageWidth, height: pageHeight, contentWidth: pageWidth - horizontalPadding, contentHeight: pageHeight - verticalPadding });
           pageNodes.forEach((element, index) => { element.dataset.owPage = String(index); });
           setPages(pageNodes.map((element, index) => ({ id: `docx-${index}`, element, number: index + 1 })));
         }
@@ -183,7 +179,11 @@ function HomePage() {
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      wordPreviewRef.current?._orcaResizeObserver?.disconnect();
+      if (wordPreviewRef.current) wordPreviewRef.current._orcaResizeObserver = null;
+    };
   }, [file, kind]);
 
   async function acceptFile(candidate) {
@@ -283,7 +283,11 @@ function HomePage() {
     setNotice('');
     setTimestampProgress({ current: 0, total: 0, label: '', status: '' });
     if (inputRef.current) inputRef.current.value = '';
-    if (wordPreviewRef.current) wordPreviewRef.current.innerHTML = '';
+    if (wordPreviewRef.current) {
+      wordPreviewRef.current._orcaResizeObserver?.disconnect();
+      wordPreviewRef.current._orcaResizeObserver = null;
+      wordPreviewRef.current.innerHTML = '';
+    }
   }
 
   const gridSpec = attachmentGridSpec(
@@ -334,7 +338,7 @@ function HomePage() {
             {Array.from({ length: attachmentPageCount }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} gridSpec={gridSpec} pageSize={attachmentPageSize} />)}
           </div>}
           {kind === 'docx' && <div className="pages-list docx-pages-list">
-            <PageCard page={{ cover: true, width: 816, height: 1056 }} index={0} stamp={stamp} coverTitle={coverTitle} setCoverTitle={setCoverTitle} coverBody={coverBody} setCoverBody={setCoverBody} />
+            <PageCard page={{ cover: true, width: attachmentPageSize.width, height: attachmentPageSize.height }} index={0} stamp={stamp} coverTitle={coverTitle} setCoverTitle={setCoverTitle} coverBody={coverBody} setCoverBody={setCoverBody} />
             <div className="word-preview-host" ref={wordPreviewRef} />
             {Array.from({ length: attachmentPageCount }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} gridSpec={gridSpec} pageSize={attachmentPageSize} />)}
           </div>}
@@ -373,10 +377,14 @@ function AuthenticatorGate() {
   return <main className="auth-gate"><form className="auth-card" onSubmit={unlock}><p className="eyebrow">ORCAWARDEN · PRIVATE STAMPER</p><h1>Authenticator required</h1><p>Enter the current 6-digit code from your authenticator app.</p><label className="auth-code-label">Authentication code<input autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} required /></label>{error && <p className="auth-error" role="alert">{error}</p>}<button className="button button-primary" type="submit" disabled={code.length !== 6}>Unlock stamper</button></form></main>;
 }
 
+function AccessDeniedPage() {
+  return <main className="access-denied"><section><p>ORCAWARDEN · ACCESS CONTROL</p><h1>You dont have access to this application</h1></section></main>;
+}
+
 export default function App() {
   return <Switch>
     <Route path="/verify/:code">{(params) => <VerifyPage code={params.code} />}</Route>
     <Route path="/mainapp">{() => <AuthenticatorGate />}</Route>
-    <Route path="/">{() => <AuthenticatorGate />}</Route>
+    <Route path="/">{() => <AccessDeniedPage />}</Route>
   </Switch>;
 }
