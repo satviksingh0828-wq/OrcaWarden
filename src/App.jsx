@@ -348,10 +348,35 @@ function HomePage() {
   </div>;
 }
 
+function AuthenticatorGate() {
+  const [status, setStatus] = useState('loading');
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    fetch('/api/auth/status', { credentials: 'same-origin' }).then((response) => response.json()).then(async (result) => {
+      if (result.configured) await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      setStatus(result.configured ? 'locked' : 'unconfigured');
+    }).catch(() => setStatus('unconfigured'));
+  }, []);
+  async function unlock(event) {
+    event.preventDefault(); setError('');
+    try {
+      const response = await fetch('/api/auth/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Authenticator check failed.');
+      setStatus('authenticated'); setCode('');
+    } catch (reason) { setError(reason.message || 'Authenticator check failed.'); }
+  }
+  if (status === 'loading') return <main className="auth-gate"><p>Checking access…</p></main>;
+  if (status === 'authenticated') return <HomePage />;
+  if (status === 'unconfigured') return <main className="auth-gate"><section className="auth-card"><p className="eyebrow">ORCAWARDEN · PRIVATE STAMPER</p><h1>Authenticator setup required</h1><p>Owner: configure the authenticator secret and session signing key in the server environment before using the private app. Public verification is still available.</p></section></main>;
+  return <main className="auth-gate"><form className="auth-card" onSubmit={unlock}><p className="eyebrow">ORCAWARDEN · PRIVATE STAMPER</p><h1>Authenticator required</h1><p>Enter the current 6-digit code from your authenticator app.</p><label className="auth-code-label">Authentication code<input autoFocus inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} required /></label>{error && <p className="auth-error" role="alert">{error}</p>}<button className="button button-primary" type="submit" disabled={code.length !== 6}>Unlock stamper</button></form></main>;
+}
+
 export default function App() {
   return <Switch>
     <Route path="/verify/:code">{(params) => <VerifyPage code={params.code} />}</Route>
-    <Route path="/mainapp">{() => <HomePage />}</Route>
-    <Route path="/">{() => <HomePage />}</Route>
+    <Route path="/mainapp">{() => <AuthenticatorGate />}</Route>
+    <Route path="/">{() => <AuthenticatorGate />}</Route>
   </Switch>;
 }

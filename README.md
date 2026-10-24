@@ -28,15 +28,30 @@ SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 SUPABASE_OTS_BUCKET=orcawarden-ots
 ORCAWARDEN_ENCRYPTION_KEY=replace-with-a-permanent-strong-server-key
+ORCAWARDEN_TOTP_SECRET=BASE32_SECRET_FOR_YOUR_AUTHENTICATOR
+ORCAWARDEN_SESSION_SECRET=RANDOM_64_CHARACTER_OR_LONGER_SECRET
 ```
 
 The bucket is private and stores encrypted proof files only, not uploaded documents. The Render server uses the Supabase service-role key to access it. Uploaded documents are held in bounded server memory only while they are hashed or verified, then discarded. OpenTimestamps calendar servers receive only SHA-256 hashes and do not require an API key.
 
-Set `ORCAWARDEN_ENCRYPTION_KEY` to a permanent server-only value of at least 8 characters. Keep it unchanged for the full deployment lifecycle: changing or losing it makes existing encrypted proofs unreadable. The server derives an AES-256-GCM key with scrypt; the key is never sent to the browser. The health endpoint is `GET /health` and returns HTTP 200 only when Supabase and the encryption key are configured.
+Set `ORCAWARDEN_ENCRYPTION_KEY` to a permanent server-only value of at least 8 characters. Keep it unchanged for the full deployment lifecycle: changing or losing it makes existing encrypted proofs unreadable. The server derives an AES-256-GCM key with scrypt; the key is never sent to the browser.
+
+### Authenticator setup for the private stamper
+
+Generate a Base32 TOTP secret and an independent session-signing secret on a trusted computer:
+
+```bash
+head -c 20 /dev/urandom | base32 -w0; echo
+openssl rand -hex 32
+```
+
+In your authenticator (Google Authenticator, Microsoft Authenticator, 1Password, etc.), add an account named **OrcaWarden** by entering the first generated Base32 key. Store both values as private Render environment variables named `ORCAWARDEN_TOTP_SECRET` and `ORCAWARDEN_SESSION_SECRET`; do not add a `VITE_` prefix, commit them, or send them in chat. Deploy/restart the service. Then `/mainapp` (and `/`) prompts for the current six-digit code whenever the app is opened. The stamper's number-reservation and timestamp APIs reject requests without a valid signed session; `/verify/:code` remains public. Login attempts are throttled. If you lose the authenticator, replace the TOTP secret in Render to enroll a new device.
+
+The `GET /health` endpoint returns HTTP 200 only when Supabase, proof encryption, and both authenticator variables are configured.
 
 ## Deploy on Render
 
-This repository includes `render.yaml` and is configured as a Render Node web service. Add the four private variables above to the Render service before deploying. Render uses `npm ci && npm run build`, starts the app with `npm start`, and checks `/health`.
+This repository includes `render.yaml` and is configured as a Render Node web service. Add all private variables above to the Render service before deploying. Render uses `npm ci && npm run build`, starts the app with `npm start`, and checks `/health`.
 
 1. Commit and push the application to the `main` branch of `satviksingh0828-wq/OrcaWarden`.
 2. Sign in to Render and choose **New → Blueprint**.
