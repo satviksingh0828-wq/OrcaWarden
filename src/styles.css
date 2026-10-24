@@ -5,6 +5,23 @@
 
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 
+/* OrcaWarden monochrome terminal presentation */
+:root{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;color:#111;background:#fff;--ink:#111;--teal:#111;--muted:#555;--line:#bbb;--paper:#fff;--gold:#111;--soft:#f4f4f4;--danger:#111;--success:#111}
+html,body,#root,.app-shell,.workspace,.preview-workspace,.verify-shell{background:#fff!important;color:#111!important}
+body,button,input,textarea{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+.brand-mark,.button-primary,.button-secondary,.step b,.number-display,.verify-number,.verify-icon,.upload-icon,.trust-icon,.file-icon,.position-state,.stamp-overlay,.placement-dot,.legend-dot{background:#fff!important;color:#111!important;box-shadow:none!important}
+.button,.upload-panel,.verify-card,.editor-layout,.page-canvas,.file-chip,.rail-section,.preview-toolbar,.attachment-sheet,.alert,.verify-note,.number-display,.verify-number,.verify-dropzone{border-radius:0!important;box-shadow:none!important}
+.button-primary,.button-secondary{border:1px solid #111!important;color:#111!important}
+.button-primary:hover:not(:disabled),.button-secondary:hover:not(:disabled){background:#eee!important}
+.upload-panel.is-dragging{background:#f5f5f5!important;border-color:#111!important}
+.verify-card{border:1px solid #111!important}
+.verify-log-placeholder{color:#111}
+.verification-log{margin-top:18px;border-top:1px solid #111;padding-top:14px;text-align:left}
+.verification-log h2{font:700 13px ui-monospace,monospace;margin:0 0 10px;color:#111}
+.verification-log-row{display:grid;grid-template-columns:1fr;gap:4px;padding:9px 0;border-bottom:1px solid #bbb;font-size:11px;color:#111}
+.verification-log-row strong{font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.verification-log-row small{font-size:10px;color:#444;overflow-wrap:anywhere}
+
 .workspace{width:min(100% - 32px,760px);min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:28px 0}
 .upload-panel{width:100%;min-height:0;border:0;border-radius:0;background:transparent;padding:32px 20px;transition:background .2s,border-color .2s}
 .upload-panel.is-dragging{background:#edf7f6;border-color:#277a7a;transform:none}

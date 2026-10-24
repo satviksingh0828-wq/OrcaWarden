@@ -57,7 +57,34 @@ function jsonError(res, error) { return res.status(400).json({ error: error?.mes
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024, files: 1 } });
+const requestWindows = new Map();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cache-Control': req.path.startsWith('/api/') ? 'no-store' : 'no-cache',
+  });
+  if (req.secure) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+app.use('/api', (req, res, next) => {
+  const now = Date.now();
+  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  let window = requestWindows.get(key);
+  if (!window || now - window.startedAt > 60_000) window = { startedAt: now, count: 0 };
+  window.count += 1;
+  requestWindows.set(key, window);
+  if (requestWindows.size > 10_000) {
+    for (const [ip, item] of requestWindows) if (now - item.startedAt > 60_000) requestWindows.delete(ip);
+  }
+  if (window.count > 60) return res.status(429).json({ error: 'Too many requests. Please try again shortly.' });
+  next();
+});
 app.use(express.json({ limit: '16kb' }));
 app.get('/health', (_req, res) => {
   const configured = Boolean(supabaseUrl && serviceRoleKey && encryptionSecret.trim().length >= 8);
@@ -107,4 +134,4 @@ app.post('/api/verify', upload.single('file'), async (req, res) => {
 });
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use((_req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
-app.listen(PORT, () => console.log(`OrcaWarden listening on ${PORT}`));
+app.listen(PORT);

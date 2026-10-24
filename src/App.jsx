@@ -32,6 +32,7 @@ function VerifyPage({ code }) {
   const [candidate, setCandidate] = useState(null);
   const [state, setState] = useState('idle');
   const [message, setMessage] = useState('');
+  const [verificationLog, setVerificationLog] = useState([]);
 
   async function verifyFile() {
     if (!candidate || state === 'checking') return;
@@ -39,6 +40,14 @@ function VerifyPage({ code }) {
     setMessage('Uploading the document securely and checking the stored OrcaWarden proof…');
     try {
       const result = await verifyOpenTimestamp(candidate, code);
+      const attestations = result.attestations || {};
+      setVerificationLog(Object.entries(attestations).flatMap(([calendar, entries]) =>
+        (Array.isArray(entries) ? entries : [entries]).map((entry) => ({
+          source: 'OrcaWarden',
+          status: result.blockchainVerified ? 'Bitcoin blockchain attestation verified' : 'Proof submitted; awaiting Bitcoin confirmation',
+          detail: entry?.height ? `Bitcoin block ${entry.height}` : calendar.replace(/https?:\/\//, '').split('/')[0],
+        })),
+      ));
       setState(result.matches ? (result.blockchainVerified ? 'confirmed' : 'pending') : 'invalid');
       setMessage(!result.matches
         ? 'The uploaded document does not match the OrcaWarden proof saved for this document number.'
@@ -58,11 +67,12 @@ function VerifyPage({ code }) {
         <h1>{valid ? 'Code link opened' : 'Invalid document code'}</h1>
         {valid ? <>
           <div className="verify-number">{code}</div>
-          <p className="verify-copy">Upload the document you want to verify. OrcaWarden securely checks the uploaded file, decrypts the matching proof, and checks the proof against Bitcoin.</p>
+          <p className="verify-copy">Upload a document to check its OrcaWarden proof against Bitcoin blockchain attestations.</p>
           <label className="verify-dropzone"> <Upload size={24} /><strong>{candidate ? candidate.name : 'Choose a document file'}</strong><span>{candidate ? 'Click to replace the selected file' : 'PDF or Word (.docx), up to 40 MB'}</span><input className="sr-only" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => { setCandidate(event.target.files?.[0] || null); setState('idle'); setMessage(''); }} /></label>
           <button className="button button-primary verify-button" disabled={!candidate || state === 'checking' || !isTimestampStorageConfigured()} onClick={verifyFile}>{state === 'checking' ? <><span className="spinner" /> Checking with OrcaWarden…</> : 'Verify document'}</button>
           {!isTimestampStorageConfigured() && <p className="verify-copy verify-config-note">{getTimestampStorageConfigurationError()}</p>}
           {message && <div className={`verify-note ${state === 'confirmed' ? 'verify-note-success' : state === 'pending' ? 'verify-note-pending' : state === 'invalid' || state === 'error' ? 'verify-note-error' : ''}`}>{message}</div>}
+          {verificationLog.length > 0 && <section className="verification-log" aria-live="polite"><h2>OrcaWarden verification log</h2>{verificationLog.map((entry, index) => <div className="verification-log-row" key={`${entry.detail}-${index}`}><strong>{entry.source}</strong><span>{entry.status}</span><small>{entry.detail}</small></div>)}</section>}
         </> : <p className="verify-copy">The link must contain one 10-digit document number.</p>}
       </div>
     </main>
@@ -328,7 +338,7 @@ function HomePage() {
             <div className="word-preview-host" ref={wordPreviewRef} />
             {Array.from({ length: attachmentPageCount }, (_, index) => <AttachmentGridPage key={`attachments-${index}`} attachments={attachments} index={index} onRename={renameAttachment} gridSpec={gridSpec} pageSize={attachmentPageSize} />)}
           </div>}
-          <div className="preview-disclaimer"><Bitcoin size={14} /><span>The stamp text says “Secured on Bitcoin Blockchain.” This app does not submit or verify a Bitcoin transaction.</span></div>
+          <div className="preview-disclaimer"><Bitcoin size={14} /><span>OpenTimestamps proofs are checked against Bitcoin attestations during public verification. Calendar submission may remain pending until Bitcoin confirmation.</span></div>
         </section>
       </section>}
       {busy && timestampProgress.total > 0 && <div className="timestamp-modal-backdrop" role="dialog" aria-live="polite" aria-label="OpenTimestamps progress"><div className="timestamp-modal"><div className="timestamp-modal-topline"><span className="spinner dark-spinner" /><p className="section-kicker">OPEN TIMESTAMPS</p></div><h2>Securing your documents</h2><p className="timestamp-modal-copy">Each document is hashed locally and submitted one at a time. Do not close this window until all proofs are saved.</p><div className="timestamp-progress-heading"><strong>{timestampProgress.label || 'Preparing documents'}</strong><span>{timestampProgress.current}/{timestampProgress.total}</span></div><div className="progress-track"><span style={{ width: `${timestampProgress.current / timestampProgress.total * 100}%` }} /></div><p className="timestamp-modal-status">{timestampProgress.status}</p></div></div>}
@@ -341,6 +351,7 @@ function HomePage() {
 export default function App() {
   return <Switch>
     <Route path="/verify/:code">{(params) => <VerifyPage code={params.code} />}</Route>
+    <Route path="/mainapp">{() => <HomePage />}</Route>
     <Route path="/">{() => <HomePage />}</Route>
   </Switch>;
 }
