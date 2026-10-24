@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, Route, Switch } from 'wouter';
-import { ArrowDownToLine, ArrowLeft, BadgeCheck, Bitcoin, Check, ChevronRight, CircleAlert, FileText, Fingerprint, LockKeyhole, MousePointer2, RotateCcw, ShieldCheck, Upload, X } from 'lucide-react';
+import { Route, Switch } from 'wouter';
+import { ArrowDownToLine, BadgeCheck, Bitcoin, Check, CircleAlert, FileText, LockKeyhole, MousePointer2, RotateCcw, Upload, X } from 'lucide-react';
 import { createDocumentCode, createStamp } from './lib/stamp.js';
 import { exportStampedPdf, previewPdf } from './lib/pdf.js';
 import { exportStampedDocx, paintDocxStampOverlays, previewDocx } from './lib/docx.js';
@@ -27,32 +27,19 @@ function downloadBlob(blob, name) {
   window.setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-function Brand() {
-  return <Link href="/" className="brand-link" aria-label="OrcaWarden Document Stamper home">
-    <span className="brand-mark"><ShieldCheck size={19} strokeWidth={2.1} /></span>
-    <span className="brand-name">Orca<span>Warden</span></span>
-    <span className="brand-divider" />
-    <span className="brand-product">DOCUMENT STAMPER</span>
-  </Link>;
-}
-
 function VerifyPage({ code }) {
   const valid = /^\d{10}$/.test(code || '');
   return <div className="app-shell">
-    <header className="topbar"><Brand /><Link href="/" className="back-link"><ArrowLeft size={15} /> Stamp a document</Link></header>
     <main className="verify-shell">
       <div className="verify-card">
-        <div className="verify-icon"><Fingerprint size={27} /></div>
         <p className="eyebrow">ORCAWARDEN DOCUMENT CODE</p>
         <h1>{valid ? 'Code link opened' : 'Invalid document code'}</h1>
         {valid ? <>
           <div className="verify-number">{code}</div>
           <p className="verify-copy">This stamp links to document number <strong>{code}</strong>. This app does not keep an issuance registry, upload the document, or record a Bitcoin transaction, so it cannot confirm that the document was issued here or independently verify blockchain settlement.</p>
-          <div className="verify-note"><LockKeyhole size={16} /> Compare this number with the source document and confirm it with its issuer.</div>
+          <div className="verify-note">Compare this number with the source document and confirm it with its issuer.</div>
         </> : <p className="verify-copy">The link must contain one 10-digit document number.</p>}
-        <Link href="/" className="button button-primary verify-button"><ArrowLeft size={16} /> Back to document stamper</Link>
       </div>
-      <p className="privacy-footnote">No document is sent to OrcaWarden by this page.</p>
     </main>
   </div>;
 }
@@ -203,27 +190,14 @@ function HomePage() {
   }
 
   return <div className="app-shell">
-    <header className="topbar"><Brand /><div className="privacy-pill"><LockKeyhole size={13} /> FILES STAY ON THIS DEVICE</div></header>
     <main className="workspace">
-      <section className="intro-row">
-        <div>
-          <p className="eyebrow">DOCUMENT INTEGRITY MARK</p>
-          <h1>Stamp a document.<br /><span>Keep the original in your hands.</span></h1>
-          <p className="intro-copy">Place an OrcaWarden mark on every page of a PDF or Word file. Your document is processed locally in this browser.</p>
-        </div>
-        <div className="steps" aria-label="Three steps">
-          <span className="step active"><b>01</b> Upload</span><ChevronRight size={14} /><span className={`step ${file ? 'active' : ''}`}><b>02</b> Place</span><ChevronRight size={14} /><span className={`step ${notice.includes('downloaded') ? 'active' : ''}`}><b>03</b> Download</span>
-        </div>
-      </section>
-
       {!file ? <section className={`upload-panel ${dragging ? 'is-dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragging(false); }} onDrop={(event) => { event.preventDefault(); setDragging(false); acceptFile(event.dataTransfer.files?.[0]); }}>
-        <div className="upload-icon"><Upload size={22} /></div>
         <h2>Choose a document to stamp</h2>
         <p>PDF or Word (.docx), up to 40 MB</p>
-        <button className="button button-primary" onClick={() => inputRef.current?.click()}><Upload size={16} /> Select a file</button>
+        <button className="button button-primary" onClick={() => inputRef.current?.click()}>Select a file</button>
         <span className="drop-hint">or drag and drop it here</span>
         <input ref={inputRef} className="sr-only" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => acceptFile(event.target.files?.[0])} />
-        <div className="upload-foot"><LockKeyhole size={14} /> File contents are not uploaded or stored.</div>
+        <div className="upload-foot">File contents are not uploaded or stored</div>
       </section> : <section className="editor-layout">
         <aside className="control-rail">
           <div className="file-chip"><div className="file-icon"><FileText size={18} /></div><div className="file-name-wrap"><strong title={file.name}>{file.name}</strong><span>{kind === 'pdf' ? 'PDF DOCUMENT' : 'WORD DOCUMENT'} · {(file.size / (1024 * 1024)).toFixed(1)} MB</span></div><button className="icon-button" aria-label="Remove file" onClick={clearFile}><X size={16} /></button></div>
@@ -247,8 +221,6 @@ function HomePage() {
       </section>}
 
       {error && !file && <div className="alert alert-error upload-error"><CircleAlert size={16} /><span>{error}</span></div>}
-      {!file && <section className="trust-row"><div><span className="trust-icon"><LockKeyhole size={16} /></span><strong>Private by design</strong><span>Documents are processed in your browser</span></div><div><span className="trust-icon"><Fingerprint size={16} /></span><strong>Three machine-readable codes</strong><span>QR, Data Matrix and barcode share one link</span></div><div><span className="trust-icon"><FileText size={16} /></span><strong>Original format preserved</strong><span>Download a stamped PDF or Word file</span></div></section>}
-      <footer className="site-footer"><span>ORCAWARDEN DOCUMENT STAMPER</span><span>No document upload · No document storage</span><Link href="/verify/1234567890">How document links work</Link></footer>
     </main>
     {kind === 'docx' && <DocxClickCapture
       hostRef={wordPreviewRef}
@@ -282,14 +254,9 @@ function DocxClickCapture({ hostRef, pages, stamp, position, onChoose }) {
   return null;
 }
 
-function NotFound() {
-  return <div className="not-found"><Brand /><h1>That page isn't here.</h1><Link href="/" className="button button-primary">Return to the stamper</Link></div>;
-}
-
 export default function App() {
   return <Switch>
     <Route path="/verify/:code">{(params) => <VerifyPage code={params.code} />}</Route>
     <Route path="/">{() => <HomePage />}</Route>
-    <Route>{() => <NotFound />}</Route>
   </Switch>;
 }
